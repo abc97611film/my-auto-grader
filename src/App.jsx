@@ -774,10 +774,6 @@ export default function App() {
                     </>
                   )}
                 </div>
-                {/* 右下角的打勾或叉叉小圖示裝飾 (現在會乖乖待在卡片內了) */}
-                <div className="absolute bottom-1 right-2 opacity-20 text-2xl pointer-events-none">
-                  {item.isCorrect ? '✅' : '❌'}
-                </div>
               </div>
             ))}
           </div>
