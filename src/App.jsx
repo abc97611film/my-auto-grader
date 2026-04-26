@@ -529,8 +529,15 @@ export default function App() {
               </select>
               <span>題 / {correctAnswers.length}題</span>
             </div>
-            <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="text-xl" title="回首頁">
-              🏠
+            <button 
+              onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
+              className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0 ml-2"
+              title="回首頁"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+              </svg>
             </button>
           </div>
           
@@ -633,8 +640,13 @@ export default function App() {
         {/* --- 手機版 UI (改為橫向捲軸卡片) --- */}
         <div className="flex md:hidden w-full h-full flex-col overflow-hidden bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
-            <div className="font-bold text-gray-800 text-sm flex items-center truncate">
-              作答檢查 <span className="text-gray-400 mx-1">|</span> <span className="text-gray-500 truncate">{recordName}</span>
+            <div className="flex flex-col flex-1 min-w-0 pr-2">
+              <span className="text-xs text-gray-400">作答檢查</span>
+              <span className="font-bold text-gray-800 text-sm truncate w-full">{recordName}</span>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button onClick={() => setCurrentPage('quiz')} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-3 py-1.5 rounded transition text-xs">修改</button>
+              <button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700 text-white font-bold px-3 py-1.5 rounded shadow transition text-xs">交卷</button>
             </div>
           </div>
 
@@ -650,11 +662,6 @@ export default function App() {
                 </div>
               );
             })}
-          </div>
-
-          <div className="px-4 pb-3 pt-2 shrink-0 flex gap-2 bg-white border-t border-gray-100">
-            <button onClick={() => setCurrentPage('quiz')} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 rounded-lg transition text-sm">修改答案</button>
-            <button onClick={handleSubmit} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg shadow transition text-sm">確認交卷</button>
           </div>
         </div>
       </>
@@ -724,11 +731,24 @@ export default function App() {
         {/* --- 手機版 UI (改為橫向捲軸卡片) --- */}
         <div className="flex md:hidden w-full h-full flex-col overflow-hidden bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
-             <span className="text-sm font-medium text-gray-800 truncate flex-1">{recordName}</span>
-             <div className="flex items-baseline shrink-0 ml-2">
-              <span className="text-xl font-bold text-blue-600">{score}</span>
-              <span className="text-xs ml-1 text-gray-500">/ {totalScore} 分</span>
-            </div>
+             <div className="flex flex-col flex-1 min-w-0 pr-2">
+               <span className="text-xs text-gray-500 truncate">{recordName}</span>
+               <div className="flex items-baseline mt-0.5">
+                <span className="text-lg font-bold text-blue-600">{score}</span>
+                <span className="text-xs ml-1 text-gray-500">/ {totalScore} 分</span>
+              </div>
+             </div>
+             <div className="flex gap-2 shrink-0">
+              <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="border border-blue-600 text-blue-600 font-bold px-3 py-1.5 rounded transition text-xs bg-white">列表</button>
+              <button onClick={() => {
+                setCurrentPage('setup');
+                setSetupTab('new');
+                setRawAnswers('');
+                setTotalQuestions('');
+                setRecordName('');
+                setCurrentRecordId(null);
+              }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded shadow transition text-xs">新測驗</button>
+             </div>
           </div>
 
           <div className="flex-1 flex flex-row items-center px-4 py-2 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
@@ -760,18 +780,6 @@ export default function App() {
                 </div>
               </div>
             ))}
-          </div>
-
-          <div className="px-4 pb-3 pt-2 shrink-0 flex gap-2 bg-white border-t border-gray-100">
-            <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border border-blue-600 text-blue-600 font-bold py-2 rounded-lg transition text-sm bg-white">回列表</button>
-            <button onClick={() => {
-              setCurrentPage('setup');
-              setSetupTab('new');
-              setRawAnswers('');
-              setTotalQuestions('');
-              setRecordName('');
-              setCurrentRecordId(null);
-            }} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg shadow transition text-sm">新測驗</button>
           </div>
         </div>
       </>
