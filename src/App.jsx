@@ -291,13 +291,10 @@ export default function App() {
     setDeleteModalId(null);
   };
 
-  // --- UI 元件：起始設定頁面 (這段剛剛不小心漏掉了) ---
   const renderSetupPage = () => (
     <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-xl p-6 flex flex-col max-h-[95vh] overflow-hidden relative z-10">
-      
       <div className="flex justify-between items-center mb-4 shrink-0">
         <h1 className="text-xl font-bold text-gray-800">選擇題自動批改</h1>
-        
         {user && user.isAnonymous && (
           <button onClick={handleGoogleLogin} className="text-xs bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-full hover:bg-blue-200 transition shadow-sm">
             👉 登入跨裝置同步
@@ -460,14 +457,13 @@ export default function App() {
     </div>
   );
 
-  // --- UI 元件：作答頁面 (分為電腦版與手機版兩種佈局) ---
   const renderQuizPage = () => {
     const options = ALPHABET.slice(0, optionCount);
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
 
     return (
       <>
-        {/* --- 電腦版 UI (維持原本的直式設計，隱藏於手機) --- */}
+        {/* --- 電腦版 UI (維持原本直式) --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
@@ -519,7 +515,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- 手機版 UI (根據草圖全新設計，隱藏於電腦) --- */}
+        {/* --- 手機版 UI (7:3 分配的 30% 區域：底部橫向選項列) --- */}
         <div className="flex md:hidden w-full h-full flex-col overflow-hidden bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0">
             <div className="font-bold text-black text-sm flex items-center">
@@ -595,42 +591,73 @@ export default function App() {
 
   const renderReviewPage = () => {
     return (
-      <div className="w-full h-full flex flex-col overflow-hidden bg-white">
-        <div className="p-4 border-b bg-gray-50 text-center shrink-0">
-          <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
-          <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
+      <>
+        {/* --- 電腦版 UI (維持原本的垂直表格) --- */}
+        <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
+          <div className="p-4 border-b bg-gray-50 text-center shrink-0">
+            <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
+            <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            <table className="w-full text-center border-collapse">
+              <thead>
+                <tr className="border-b-2 border-gray-200">
+                  <th className="py-2 text-gray-600">題號</th>
+                  <th className="py-2 text-gray-600">答案</th>
+                  <th className="py-2 text-gray-600">標註</th>
+                </tr>
+              </thead>
+              <tbody>
+                {correctAnswers.map((_, idx) => {
+                  const ans = userAnswers[idx];
+                  const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
+                  return (
+                    <tr key={idx} className={`border-b border-gray-100 ${!ans ? 'bg-red-50' : ''}`}>
+                      <td className="py-3 font-medium text-gray-700">{idx + 1}</td>
+                      <td className={`py-3 font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '未作答'}</td>
+                      <td className={`py-3 text-lg font-bold ${markOpt?.colorClass || ''}`}>{markOpt ? markOpt.symbol : '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="p-4 border-t bg-white flex justify-between space-x-3 shrink-0">
+            <button onClick={() => setCurrentPage('quiz')} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 rounded-lg transition">修改答案</button>
+            <button onClick={handleSubmit} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow transition">交卷</button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
-          <table className="w-full text-center border-collapse">
-            <thead>
-              <tr className="border-b-2 border-gray-200">
-                <th className="py-2 text-gray-600">題號</th>
-                <th className="py-2 text-gray-600">答案</th>
-                <th className="py-2 text-gray-600">標註</th>
-              </tr>
-            </thead>
-            <tbody>
-              {correctAnswers.map((_, idx) => {
-                const ans = userAnswers[idx];
-                const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
-                return (
-                  <tr key={idx} className={`border-b border-gray-100 ${!ans ? 'bg-red-50' : ''}`}>
-                    <td className="py-3 font-medium text-gray-700">{idx + 1}</td>
-                    <td className={`py-3 font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '未作答'}</td>
-                    <td className={`py-3 text-lg font-bold ${markOpt?.colorClass || ''}`}>{markOpt ? markOpt.symbol : '-'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {/* --- 手機版 UI (改為橫向捲軸卡片) --- */}
+        <div className="flex md:hidden w-full h-full flex-col overflow-hidden bg-[#F8F9FA]">
+          <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
+            <div className="font-bold text-gray-800 text-sm flex items-center truncate">
+              作答檢查 <span className="text-gray-400 mx-1">|</span> <span className="text-gray-500 truncate">{recordName}</span>
+            </div>
+          </div>
 
-        <div className="p-4 border-t bg-white flex justify-between space-x-3 shrink-0">
-          <button onClick={() => setCurrentPage('quiz')} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 rounded-lg transition">修改答案</button>
-          <button onClick={handleSubmit} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow transition">交卷</button>
+          <div className="flex-1 flex flex-row items-center px-4 py-2 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+            {correctAnswers.map((_, idx) => {
+              const ans = userAnswers[idx];
+              const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
+              return (
+                <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-20 h-[80%] min-h-[90px] shrink-0 rounded-xl border shadow-sm cursor-pointer ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
+                  <span className="text-xs text-gray-500 mb-1">第 {idx + 1} 題</span>
+                  <span className={`text-2xl font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '無'}</span>
+                  <span className={`text-sm mt-1 font-bold ${markOpt?.colorClass || 'text-transparent'}`}>{markOpt ? markOpt.symbol : ' '}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="px-4 pb-3 pt-2 shrink-0 flex gap-2 bg-white border-t border-gray-100">
+            <button onClick={() => setCurrentPage('quiz')} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 rounded-lg transition text-sm">修改答案</button>
+            <button onClick={handleSubmit} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg shadow transition text-sm">確認交卷</button>
+          </div>
         </div>
-      </div>
+      </>
     );
   };
 
@@ -639,69 +666,115 @@ export default function App() {
     const { score, totalScore, details } = resultData;
 
     return (
-      <div className="w-full h-full flex flex-col overflow-hidden bg-white">
-        
-        <div 
-          className="md:hidden h-10 w-full bg-white rounded-t-2xl flex flex-col items-center justify-center cursor-pointer shadow-[0_-2px_5px_rgba(0,0,0,0.05)] shrink-0 border-b border-gray-100"
-          onClick={() => setIsResultExpanded(!isResultExpanded)}
-        >
-          <div className="w-10 h-1.5 bg-gray-300 rounded-full mb-1"></div>
-          <span className="text-[10px] text-gray-500 font-bold tracking-widest uppercase">
-            {isResultExpanded ? '下滑收起' : '上拉展開'}
-          </span>
-        </div>
+      <>
+        {/* --- 電腦版 UI (維持原本的垂直列表) --- */}
+        <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
+          <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative shrink-0">
+             <h2 className="text-lg font-medium opacity-90 truncate">{recordName}</h2>
+             <div className="flex items-baseline justify-center mt-1">
+              <span className="text-4xl font-bold">{score}</span>
+              <span className="text-lg ml-1 opacity-80">/ {totalScore} 分</span>
+            </div>
+          </div>
 
-        <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative shrink-0">
-           <h2 className="text-lg font-medium opacity-90 truncate">{recordName}</h2>
-           <div className="flex items-baseline justify-center mt-1">
-            <span className="text-4xl font-bold">{score}</span>
-            <span className="text-lg ml-1 opacity-80">/ {totalScore} 分</span>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {details.map(item => (
+              <div key={item.questionNum} className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${item.isCorrect ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
+                <div className="flex items-center space-x-3">
+                  <span className="font-bold text-gray-500 w-8">#{item.questionNum}</span>
+                  <div className="w-6 text-center shrink-0">
+                    {item.markOpt && (
+                      <span className={`text-xl font-bold ${item.markOpt.colorClass}`}>{item.markOpt.symbol}</span>
+                    )}
+                  </div>
+                  <div className="pl-2">
+                    <div className="text-xs text-gray-500 mb-1">您的答案</div>
+                    <div className={`font-bold text-lg ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</div>
+                  </div>
+                </div>
+                {!item.isCorrect && (
+                  <div className="text-right pl-4 border-l border-red-200">
+                    <div className="text-xs text-gray-500 mb-1">正確答案</div>
+                    <div className="font-bold text-lg text-green-600">{item.correctAns}</div>
+                  </div>
+                )}
+                {item.isCorrect && <div className="text-2xl text-green-500 px-4">✓</div>}
+              </div>
+            ))}
+          </div>
+
+          <div className="p-4 border-t bg-white flex space-x-3 shrink-0">
+            <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-3 rounded-lg transition">回列表</button>
+            <button 
+              onClick={() => {
+                setCurrentPage('setup');
+                setSetupTab('new');
+                setRawAnswers('');
+                setTotalQuestions('');
+                setRecordName('');
+                setCurrentRecordId(null);
+              }}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition"
+            >
+              新測驗
+            </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {details.map(item => (
-            <div key={item.questionNum} className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${item.isCorrect ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
-              <div className="flex items-center space-x-3">
-                <span className="font-bold text-gray-500 w-8">#{item.questionNum}</span>
-                <div className="w-6 text-center shrink-0">
-                  {item.markOpt && (
-                    <span className={`text-xl font-bold ${item.markOpt.colorClass}`}>{item.markOpt.symbol}</span>
+        {/* --- 手機版 UI (改為橫向捲軸卡片) --- */}
+        <div className="flex md:hidden w-full h-full flex-col overflow-hidden bg-[#F8F9FA]">
+          <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
+             <span className="text-sm font-medium text-gray-800 truncate flex-1">{recordName}</span>
+             <div className="flex items-baseline shrink-0 ml-2">
+              <span className="text-xl font-bold text-blue-600">{score}</span>
+              <span className="text-xs ml-1 text-gray-500">/ {totalScore} 分</span>
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-row items-center px-4 py-2 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+            {details.map(item => (
+              <div key={item.questionNum} className={`flex flex-col items-center justify-center w-[100px] h-[85%] min-h-[100px] shrink-0 rounded-xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <div className="flex w-full px-2 justify-between items-center mb-1">
+                  <span className="text-xs font-bold text-gray-500">#{item.questionNum}</span>
+                  <span className={`text-xs font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
+                </div>
+                
+                <div className="flex items-center justify-center gap-2 mt-1">
+                  <div className="flex flex-col items-center">
+                    <span className="text-[10px] text-gray-400">你答</span>
+                    <span className={`text-xl font-bold ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</span>
+                  </div>
+                  {!item.isCorrect && (
+                    <>
+                      <span className="text-gray-300 text-xs">|</span>
+                      <div className="flex flex-col items-center">
+                        <span className="text-[10px] text-gray-400">正確</span>
+                        <span className="text-xl font-bold text-green-600">{item.correctAns}</span>
+                      </div>
+                    </>
                   )}
                 </div>
-                <div className="pl-2">
-                  <div className="text-xs text-gray-500 mb-1">您的答案</div>
-                  <div className={`font-bold text-lg ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</div>
+                {/* 右下角的打勾或叉叉小圖示裝飾 */}
+                <div className="absolute bottom-1 right-2 opacity-20 text-2xl">
+                  {item.isCorrect ? '✅' : '❌'}
                 </div>
               </div>
-              {!item.isCorrect && (
-                <div className="text-right pl-4 border-l border-red-200">
-                  <div className="text-xs text-gray-500 mb-1">正確答案</div>
-                  <div className="font-bold text-lg text-green-600">{item.correctAns}</div>
-                </div>
-              )}
-              {item.isCorrect && <div className="text-2xl text-green-500 px-4">✓</div>}
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
 
-        <div className="p-4 border-t bg-white flex space-x-3 shrink-0">
-          <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-3 rounded-lg transition">回列表</button>
-          <button 
-            onClick={() => {
+          <div className="px-4 pb-3 pt-2 shrink-0 flex gap-2 bg-white border-t border-gray-100">
+            <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border border-blue-600 text-blue-600 font-bold py-2 rounded-lg transition text-sm bg-white">回列表</button>
+            <button onClick={() => {
               setCurrentPage('setup');
               setSetupTab('new');
               setRawAnswers('');
               setTotalQuestions('');
               setRecordName('');
               setCurrentRecordId(null);
-            }}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition"
-          >
-            新測驗
-          </button>
+            }} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg shadow transition text-sm">新測驗</button>
+          </div>
         </div>
-      </div>
+      </>
     );
   };
 
@@ -717,15 +790,8 @@ export default function App() {
       {currentPage !== 'setup' && (
         <>
           {/* 左側 / 上方：PDF 瀏覽區 */}
-          <div className={`
-            ${currentPage === 'result' 
-              ? 'absolute inset-0 md:relative md:flex-1 md:h-full z-0' 
-              : currentPage === 'quiz'
-                ? 'h-[70dvh] w-full md:h-full md:flex-1' 
-                : 'h-[40dvh] w-full md:h-full md:flex-1'
-            } 
-            bg-gray-800 flex flex-col items-center justify-center relative
-          `}>
+          {/* 現在不管是在手機的 quiz, review, result，全部統一維持上方 70% 高度 */}
+          <div className="h-[70dvh] w-full md:h-full md:flex-1 bg-gray-800 flex flex-col items-center justify-center relative z-0">
             {pdfUrl ? (
               <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
             ) : (
@@ -742,14 +808,8 @@ export default function App() {
           </div>
 
           {/* 右側 / 下方：App 介面區 */}
-          <div className={`
-            ${currentPage === 'result' 
-              ? `fixed bottom-0 left-0 right-0 z-10 bg-white rounded-t-2xl shadow-[0_-10px_20px_rgba(0,0,0,0.2)] transition-transform duration-300 ease-in-out md:relative md:w-[400px] md:h-full md:rounded-none md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] md:translate-y-0 h-[85vh] flex flex-col ${isResultExpanded ? 'translate-y-0' : 'translate-y-[calc(100%-40px)]'}`
-              : currentPage === 'quiz'
-                ? 'h-[30dvh] w-full md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10 shrink-0'
-                : 'h-[60dvh] w-full md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10 shrink-0'
-            }
-          `}>
+          {/* 手機版統一佔用下方 30% 高度 */}
+          <div className="h-[30dvh] w-full md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10 shrink-0">
             {currentPage === 'quiz' && renderQuizPage()}
             {currentPage === 'review' && renderReviewPage()}
             {currentPage === 'result' && renderResultPage()}
