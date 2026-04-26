@@ -52,7 +52,6 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [pdfUrl, setPdfUrl] = useState(null);
-  const [isResultExpanded, setIsResultExpanded] = useState(true);
 
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -188,7 +187,6 @@ export default function App() {
     setUserAnswers({});
     setMarks({});
     setCurrentQuestionIndex(0);
-    setIsResultExpanded(true); 
     
     const newId = Date.now().toString();
     setCurrentRecordId(newId);
@@ -234,7 +232,6 @@ export default function App() {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
       setDoc(docRef, { status: 'completed', updatedAt: Date.now() }, { merge: true }).catch(console.error);
     }
-    setIsResultExpanded(true);
     setCurrentPage('result');
   };
 
@@ -279,7 +276,6 @@ export default function App() {
     setUserAnswers(record.userAnswers || {});
     setMarks(record.marks || {});
     setCurrentRecordId(record.id);
-    setIsResultExpanded(true);
     setCurrentPage('result');
   };
 
@@ -457,13 +453,14 @@ export default function App() {
     </div>
   );
 
+  // --- UI 元件：作答頁面 ---
   const renderQuizPage = () => {
     const options = ALPHABET.slice(0, optionCount);
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
 
     return (
       <>
-        {/* --- 電腦版 UI (維持原本直式) --- */}
+        {/* --- 電腦版 UI (維持直式) --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
@@ -515,9 +512,9 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- 手機版 UI (7:3 分配的 30% 區域：底部橫向選項列) --- */}
-        <div className="flex md:hidden w-full h-full flex-col overflow-hidden bg-[#F8F9FA]">
-          <div className="px-4 py-2 flex justify-between items-center shrink-0">
+        {/* --- 手機版 UI (橫式) --- */}
+        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
+          <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="font-bold text-black text-sm flex items-center">
               <span>第</span>
               <select 
@@ -541,7 +538,7 @@ export default function App() {
             </button>
           </div>
           
-          <div className="flex-1 flex flex-row items-center px-2 pb-2 gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+          <div className="w-full flex flex-row items-center px-2 py-3 gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             <div className="flex flex-col gap-2 shrink-0">
               <div className="relative">
                 <select
@@ -596,10 +593,11 @@ export default function App() {
     );
   };
 
+  // --- UI 元件：作答檢查頁面 ---
   const renderReviewPage = () => {
     return (
       <>
-        {/* --- 電腦版 UI (維持原本的垂直表格) --- */}
+        {/* --- 電腦版 UI (維持垂直表格) --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 text-center shrink-0">
             <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
@@ -637,8 +635,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- 手機版 UI (改為橫向捲軸卡片) --- */}
-        <div className="flex md:hidden w-full h-full flex-col overflow-hidden bg-[#F8F9FA]">
+        {/* --- 手機版 UI (自動高度 + 橫向捲軸卡片) --- */}
+        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
               <span className="text-xs text-gray-400">作答檢查</span>
@@ -650,12 +648,12 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex-1 flex flex-row items-center px-4 py-2 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+          <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {correctAnswers.map((_, idx) => {
               const ans = userAnswers[idx];
               const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
               return (
-                <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-20 h-[80%] min-h-[90px] shrink-0 rounded-xl border shadow-sm cursor-pointer ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
+                <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-20 h-24 shrink-0 rounded-xl border shadow-sm cursor-pointer ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
                   <span className="text-xs text-gray-500 mb-1">第 {idx + 1} 題</span>
                   <span className={`text-2xl font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '無'}</span>
                   <span className={`text-sm mt-1 font-bold ${markOpt?.colorClass || 'text-transparent'}`}>{markOpt ? markOpt.symbol : ' '}</span>
@@ -668,13 +666,14 @@ export default function App() {
     );
   };
 
+  // --- UI 元件：批改結果頁面 ---
   const renderResultPage = () => {
     if (!resultData) return null;
     const { score, totalScore, details } = resultData;
 
     return (
       <>
-        {/* --- 電腦版 UI (維持原本的垂直列表) --- */}
+        {/* --- 電腦版 UI (維持垂直列表) --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative shrink-0">
              <h2 className="text-lg font-medium opacity-90 truncate">{recordName}</h2>
@@ -728,8 +727,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- 手機版 UI (改為橫向捲軸卡片) --- */}
-        <div className="flex md:hidden w-full h-full flex-col overflow-hidden bg-[#F8F9FA]">
+        {/* --- 手機版 UI (自動高度 + 橫向捲軸卡片) --- */}
+        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
              <div className="flex flex-col flex-1 min-w-0 pr-2">
                <span className="text-xs text-gray-500 truncate">{recordName}</span>
@@ -751,9 +750,9 @@ export default function App() {
              </div>
           </div>
 
-          <div className="flex-1 flex flex-row items-center px-4 py-2 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+          <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {details.map(item => (
-              <div key={item.questionNum} className={`flex flex-col items-center justify-center w-[100px] h-[85%] min-h-[100px] shrink-0 rounded-xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+              <div key={item.questionNum} className={`flex flex-col items-center justify-center w-[100px] h-28 shrink-0 rounded-xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                 <div className="flex w-full px-2 justify-between items-center mb-1">
                   <span className="text-xs font-bold text-gray-500">#{item.questionNum}</span>
                   <span className={`text-xs font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
@@ -798,8 +797,8 @@ export default function App() {
       {currentPage !== 'setup' && (
         <>
           {/* 左側 / 上方：PDF 瀏覽區 */}
-          {/* 現在不管是在手機的 quiz, review, result，全部統一維持上方 70% 高度 */}
-          <div className="h-[70dvh] w-full md:h-full md:flex-1 bg-gray-800 flex flex-col items-center justify-center relative z-0">
+          {/* flex-1 讓 PDF 自動填滿所有剩下的空間 */}
+          <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
             {pdfUrl ? (
               <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
             ) : (
@@ -816,8 +815,11 @@ export default function App() {
           </div>
 
           {/* 右側 / 下方：App 介面區 */}
-          {/* 手機版統一佔用下方 30% 高度 */}
-          <div className="h-[30dvh] w-full md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10 shrink-0">
+          {/* 拿掉硬綁定的 h-[30dvh]，改成 h-auto 讓它自動貼合裡面的卡片高度。並加上安全邊界避免卡到 iPhone 底線 */}
+          <div 
+            className="shrink-0 h-auto max-h-[50dvh] w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+          >
             {currentPage === 'quiz' && renderQuizPage()}
             {currentPage === 'review' && renderReviewPage()}
             {currentPage === 'result' && renderResultPage()}
