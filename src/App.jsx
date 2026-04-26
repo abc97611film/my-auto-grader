@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-// 更新：換回 signInWithPopup，這是跨網域最穩定的作法
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
@@ -52,6 +51,10 @@ export default function App() {
   const [deleteModalId, setDeleteModalId] = useState(null);
   const [authError, setAuthError] = useState('');
 
+  // --- 新增 PDF 相關狀態 ---
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [isResultExpanded, setIsResultExpanded] = useState(true); // 手機版結果頁面收折狀態
+
   const [currentPage, setCurrentPage] = useState('setup');
 
   const [totalQuestions, setTotalQuestions] = useState('');
@@ -69,7 +72,6 @@ export default function App() {
   const [feedbackModal, setFeedbackModal] = useState({ isOpen: false, isCorrect: false, correctAnswer: '' });
   const [showMarksModal, setShowMarksModal] = useState(false);
 
-  // --- 改回最單純的監聽模式 ---
   useEffect(() => {
     if (!auth) {
       setAuthError("尚未填寫 Firebase 金鑰 (apiKey等)，請檢查 VS Code 裡的程式碼是否已填妥！");
@@ -80,7 +82,6 @@ export default function App() {
       if (currentUser) {
         setUser(currentUser);
       } else {
-        // 如果沒有人登入，才給予無名氏身分
         try {
           if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
             await signInWithCustomToken(auth, __initial_auth_token);
@@ -128,7 +129,6 @@ export default function App() {
     }
   }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName]);
 
-  // --- 換回彈出視窗 (Popup) 來避開 Safari 跳轉清除記憶體的問題 ---
   const handleGoogleLogin = async () => {
     if (!auth) return;
     const provider = new GoogleAuthProvider();
@@ -147,6 +147,15 @@ export default function App() {
       window.location.reload(); 
     } catch (error) {
       console.error("登出失敗:", error);
+    }
+  };
+
+  // --- 處理 PDF 檔案上傳 ---
+  const handlePdfUpload = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type === 'application/pdf') {
+      const url = URL.createObjectURL(file);
+      setPdfUrl(url);
     }
   };
 
@@ -181,6 +190,7 @@ export default function App() {
     setUserAnswers({});
     setMarks({});
     setCurrentQuestionIndex(0);
+    setIsResultExpanded(true); // 重置收折狀態
     
     const newId = Date.now().toString();
     setCurrentRecordId(newId);
@@ -226,6 +236,7 @@ export default function App() {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
       setDoc(docRef, { status: 'completed', updatedAt: Date.now() }, { merge: true }).catch(console.error);
     }
+    setIsResultExpanded(true); // 進入結果頁面時預設展開
     setCurrentPage('result');
   };
 
@@ -270,6 +281,7 @@ export default function App() {
     setUserAnswers(record.userAnswers || {});
     setMarks(record.marks || {});
     setCurrentRecordId(record.id);
+    setIsResultExpanded(true);
     setCurrentPage('result');
   };
 
@@ -281,11 +293,12 @@ export default function App() {
     setDeleteModalId(null);
   };
 
+  // --- UI 元件：起始設定頁面 (維持在畫面正中央) ---
   const renderSetupPage = () => (
-    <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md p-6 flex flex-col h-[90vh]">
+    <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-xl p-6 flex flex-col max-h-[95vh] overflow-hidden relative z-10">
       
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-bold text-gray-800">答題批改 App</h1>
+      <div className="flex justify-between items-center mb-4 shrink-0">
+        <h1 className="text-xl font-bold text-gray-800">選擇題自動批改</h1>
         
         {user && user.isAnonymous && (
           <button onClick={handleGoogleLogin} className="text-xs bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-full hover:bg-blue-200 transition shadow-sm">
@@ -325,6 +338,19 @@ export default function App() {
               onChange={(e) => setRecordName(e.target.value)}
             />
           </div>
+          
+          {/* 新增：上傳 PDF 區塊 */}
+          <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 以供對照 (選填)</label>
+            <input 
+              type="file" 
+              accept="application/pdf"
+              onChange={handlePdfUpload}
+              className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+            />
+            {pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 檔案已成功載入準備就緒</span>}
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">總題數</label>
             <input 
@@ -364,7 +390,7 @@ export default function App() {
               value={rawAnswers} onChange={(e) => setRawAnswers(e.target.value)}
             />
           </div>
-          <button onClick={handleStart} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition mt-2">開始作答</button>
+          <button onClick={handleStart} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition mt-2 shrink-0">開始作答</button>
         </div>
       )}
 
@@ -373,7 +399,7 @@ export default function App() {
           {authError && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex flex-col items-center text-center">
               <span className="text-3xl mb-2">⚠️</span>
-              <p className="font-bold mb-1">發生問題</p>
+              <p className="font-bold mb-1">連線雲端發生問題</p>
               <p className="text-sm">{authError}</p>
             </div>
           )}
@@ -437,13 +463,14 @@ export default function App() {
     </div>
   );
 
+  // --- UI 元件：作答頁面 (移除原本的置中寬度限制，改為適應容器) ---
   const renderQuizPage = () => {
     const options = ALPHABET.slice(0, optionCount);
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
 
     return (
-      <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md flex flex-col h-[90vh] overflow-hidden relative">
-        <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2">
+      <div className="w-full h-full flex flex-col overflow-hidden bg-white">
+        <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
           <div className="flex flex-col flex-1 min-w-0 pr-2">
              <span className="text-sm font-bold text-blue-600 mb-1 leading-tight break-words">
                {recordName}
@@ -454,15 +481,12 @@ export default function App() {
                <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 border border-gray-300 rounded outline-none font-bold text-blue-600">
                  {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
                </select>
-               <span className="font-medium text-gray-700">題 / 共 {correctAnswers.length} 題</span>
+               <span className="font-medium text-gray-700">題 / {correctAnswers.length} 題</span>
              </div>
           </div>
           <button 
-            onClick={() => {
-              setCurrentPage('setup');
-              setSetupTab('history');
-            }} 
-            className="flex items-center justify-center w-10 h-10 bg-white border border-gray-200 hover:bg-gray-100 hover:border-gray-300 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
+            onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
+            className="flex items-center justify-center w-10 h-10 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
             title="回首頁"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -472,12 +496,12 @@ export default function App() {
           </button>
         </div>
 
-        <div className="p-4 flex justify-center space-x-4 border-b">
+        <div className="p-4 flex justify-center space-x-4 border-b shrink-0">
           {MARK_OPTIONS.map(mark => (
             <button 
               key={mark.id} 
               onClick={() => handleToggleMark(mark.id)} 
-              className={`text-2xl p-2 w-12 h-12 flex items-center justify-center rounded-full transition-all font-bold ${marks[currentQuestionIndex] === mark.id ? 'bg-blue-100 scale-110 shadow-md opacity-100 ' + mark.colorClass : 'bg-gray-50 hover:bg-gray-100 opacity-40 hover:opacity-100 ' + mark.colorClass}`}
+              className={`text-2xl w-12 h-12 flex items-center justify-center rounded-full transition-all font-bold ${marks[currentQuestionIndex] === mark.id ? 'bg-blue-100 scale-110 shadow-md opacity-100 ' + mark.colorClass : 'bg-gray-50 hover:bg-gray-100 opacity-40 hover:opacity-100 ' + mark.colorClass}`}
             >
               {mark.symbol}
             </button>
@@ -490,58 +514,21 @@ export default function App() {
           ))}
         </div>
 
-        <div className="p-4 border-t bg-white flex justify-between items-center">
-          <button onClick={() => setShowMarksModal(true)} className="text-gray-600 font-medium hover:text-gray-800 px-3 py-2 rounded">看標註題目</button>
+        <div className="p-4 border-t bg-white flex justify-between items-center shrink-0">
+          <button onClick={() => setShowMarksModal(true)} className="text-gray-600 font-medium hover:text-gray-800 px-3 py-2 rounded">看標註</button>
           <button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow transition">{isLastQuestion ? '作答完成' : '下一題'}</button>
         </div>
-
-        {feedbackModal.isOpen && (
-          <div className="absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full text-center space-y-4 animate-scale-in">
-              {feedbackModal.isCorrect ? (
-                <div><div className="text-5xl mb-2">✅</div><h2 className="text-2xl font-bold text-green-600">答對了！</h2></div>
-              ) : (
-                <div><div className="text-5xl mb-2">❌</div><h2 className="text-2xl font-bold text-red-600">答錯了</h2><p className="text-gray-600 mt-2 text-lg">正確答案是：<span className="font-bold text-red-600">{feedbackModal.correctAnswer}</span></p></div>
-              )}
-              <button onClick={handleCloseFeedback} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-4 shadow">{feedbackModal.isLast ? '進入檢查頁面' : '繼續下一題'}</button>
-            </div>
-          </div>
-        )}
-
-        {showMarksModal && (
-          <div className="absolute inset-0 bg-black/60 flex items-end justify-center z-40 transition-opacity">
-            <div className="bg-white w-full max-h-[60%] rounded-t-2xl flex flex-col">
-              <div className="p-4 border-b flex justify-between items-center">
-                <h3 className="text-lg font-bold">有標註的題目</h3>
-                <button onClick={() => setShowMarksModal(false)} className="text-gray-500 text-xl font-bold p-2">&times;</button>
-              </div>
-              <div className="p-4 flex-1 overflow-y-auto grid grid-cols-4 gap-3">
-                {Object.keys(marks).length === 0 ? <p className="col-span-4 text-center text-gray-500 py-4">目前沒有任何標註</p> : (
-                  Object.entries(marks).map(([idxStr, markId]) => {
-                    const qIdx = parseInt(idxStr, 10);
-                    const markOpt = MARK_OPTIONS.find(m => m.id === markId);
-                    return (
-                      <button key={qIdx} onClick={() => { setCurrentQuestionIndex(qIdx); setShowMarksModal(false); }} className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex flex-col items-center justify-center hover:bg-blue-50 transition">
-                        <span className="text-sm text-gray-500 mb-1">第 {qIdx + 1} 題</span>
-                        <span className={`text-xl font-bold ${markOpt?.colorClass || ''}`}>{markOpt?.symbol}</span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   };
 
+  // --- UI 元件：作答檢查頁面 ---
   const renderReviewPage = () => {
     return (
-      <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md h-[90vh] flex flex-col overflow-hidden">
-        <div className="p-4 border-b bg-gray-50 text-center">
+      <div className="w-full h-full flex flex-col overflow-hidden bg-white">
+        <div className="p-4 border-b bg-gray-50 text-center shrink-0">
           <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
-          <p className="text-sm text-gray-500 mt-1">{recordName}</p>
+          <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
@@ -549,7 +536,7 @@ export default function App() {
             <thead>
               <tr className="border-b-2 border-gray-200">
                 <th className="py-2 text-gray-600">題號</th>
-                <th className="py-2 text-gray-600">您的答案</th>
+                <th className="py-2 text-gray-600">答案</th>
                 <th className="py-2 text-gray-600">標註</th>
               </tr>
             </thead>
@@ -569,7 +556,7 @@ export default function App() {
           </table>
         </div>
 
-        <div className="p-4 border-t bg-white flex justify-between space-x-3">
+        <div className="p-4 border-t bg-white flex justify-between space-x-3 shrink-0">
           <button onClick={() => setCurrentPage('quiz')} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 rounded-lg transition">修改答案</button>
           <button onClick={handleSubmit} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow transition">交卷</button>
         </div>
@@ -577,18 +564,30 @@ export default function App() {
     );
   };
 
+  // --- UI 元件：批改結果頁面 ---
   const renderResultPage = () => {
     if (!resultData) return null;
     const { score, totalScore, details } = resultData;
 
     return (
-      <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md h-[90vh] flex flex-col overflow-hidden">
-        <div className="p-6 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative">
-           <h2 className="text-lg font-medium opacity-90">{recordName}</h2>
-           <p className="text-sm opacity-80 mb-2">批改結果</p>
-           <div className="flex items-baseline justify-center">
-            <span className="text-5xl font-bold">{score}</span>
-            <span className="text-xl ml-1 opacity-80">/ {totalScore} 分</span>
+      <div className="w-full h-full flex flex-col overflow-hidden bg-white">
+        
+        {/* 手機版專用的收折拉桿 */}
+        <div 
+          className="md:hidden h-12 w-full bg-white rounded-t-2xl flex flex-col items-center justify-center cursor-pointer shadow-[0_-2px_5px_rgba(0,0,0,0.05)] shrink-0 border-b border-gray-100"
+          onClick={() => setIsResultExpanded(!isResultExpanded)}
+        >
+          <div className="w-10 h-1.5 bg-gray-300 rounded-full mb-1"></div>
+          <span className="text-[10px] text-gray-500 font-bold tracking-widest uppercase">
+            {isResultExpanded ? '下滑收起結果查看題目' : '上拉展開批改結果'}
+          </span>
+        </div>
+
+        <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative shrink-0">
+           <h2 className="text-lg font-medium opacity-90 truncate">{recordName}</h2>
+           <div className="flex items-baseline justify-center mt-1">
+            <span className="text-4xl font-bold">{score}</span>
+            <span className="text-lg ml-1 opacity-80">/ {totalScore} 分</span>
           </div>
         </div>
 
@@ -618,8 +617,8 @@ export default function App() {
           ))}
         </div>
 
-        <div className="p-4 border-t bg-white flex space-x-3">
-          <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-3 rounded-lg transition">回紀錄列表</button>
+        <div className="p-4 border-t bg-white flex space-x-3 shrink-0">
+          <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-3 rounded-lg transition">回列表</button>
           <button 
             onClick={() => {
               setCurrentPage('setup');
@@ -631,27 +630,105 @@ export default function App() {
             }}
             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition"
           >
-            建立新測驗
+            新測驗
           </button>
         </div>
       </div>
     );
   };
 
+  // --- 主渲染邏輯：支援分割畫面 ---
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans text-gray-900 relative">
+    <div className={`min-h-[100dvh] bg-gray-100 font-sans text-gray-900 relative ${currentPage === 'setup' ? 'flex items-center justify-center p-4' : 'flex flex-col md:flex-row w-screen h-[100dvh] overflow-hidden'}`}>
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .animate-scale-in { animation: scaleIn 0.2s ease-out forwards; }
       `}} />
       
+      {/* 獨立顯示起始頁面 */}
       {currentPage === 'setup' && renderSetupPage()}
-      {currentPage === 'quiz' && renderQuizPage()}
-      {currentPage === 'review' && renderReviewPage()}
-      {currentPage === 'result' && renderResultPage()}
+
+      {/* 進入作答/結果頁面時啟動分割畫面 */}
+      {currentPage !== 'setup' && (
+        <>
+          {/* 左側 / 上方：PDF 瀏覽區 */}
+          <div className={`
+            ${currentPage === 'result' 
+              ? 'absolute inset-0 md:relative md:flex-1 md:h-full z-0' // 手機結果頁 PDF 墊底
+              : 'h-[40vh] w-full md:h-full md:flex-1' // 手機作答頁 PDF 佔上方 40%
+            } 
+            bg-gray-800 flex flex-col items-center justify-center relative
+          `}>
+            {pdfUrl ? (
+              <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
+            ) : (
+              <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
+                <span className="text-4xl mb-4">📄</span>
+                <p className="mb-2 font-bold text-lg text-white">尚未載入題目 PDF</p>
+                <p className="mb-6 text-sm text-gray-400">若有需要，可於此重新上傳以供對照</p>
+                <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-lg font-bold transition shadow-sm">
+                  選擇 PDF 檔案
+                  <input type="file" accept="application/pdf" className="hidden" onChange={handlePdfUpload} />
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* 右側 / 下方：App 介面區 */}
+          <div className={`
+            ${currentPage === 'result' 
+              ? `fixed bottom-0 left-0 right-0 z-10 bg-white rounded-t-2xl shadow-[0_-10px_20px_rgba(0,0,0,0.2)] transition-transform duration-300 ease-in-out md:relative md:w-[400px] md:h-full md:rounded-none md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] md:translate-y-0 h-[85vh] flex flex-col ${isResultExpanded ? 'translate-y-0' : 'translate-y-[calc(100%-48px)]'}`
+              : 'h-[60vh] w-full md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10 shrink-0'
+            }
+          `}>
+            {currentPage === 'quiz' && renderQuizPage()}
+            {currentPage === 'review' && renderReviewPage()}
+            {currentPage === 'result' && renderResultPage()}
+          </div>
+        </>
+      )}
+
+      {/* 共用的 Modal 彈出視窗 */}
+      {feedbackModal.isOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full text-center space-y-4 animate-scale-in">
+            {feedbackModal.isCorrect ? (
+              <div><div className="text-5xl mb-2">✅</div><h2 className="text-2xl font-bold text-green-600">答對了！</h2></div>
+            ) : (
+              <div><div className="text-5xl mb-2">❌</div><h2 className="text-2xl font-bold text-red-600">答錯了</h2><p className="text-gray-600 mt-2 text-lg">正確答案是：<span className="font-bold text-red-600">{feedbackModal.correctAnswer}</span></p></div>
+            )}
+            <button onClick={handleCloseFeedback} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-4 shadow">{feedbackModal.isLast ? '進入檢查頁面' : '繼續下一題'}</button>
+          </div>
+        </div>
+      )}
+
+      {showMarksModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-40 transition-opacity">
+          <div className="bg-white w-full md:w-[400px] md:relative md:rounded-xl md:mb-10 max-h-[60%] rounded-t-2xl flex flex-col mx-auto shadow-2xl">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="text-lg font-bold">有標註的題目</h3>
+              <button onClick={() => setShowMarksModal(false)} className="text-gray-500 text-xl font-bold p-2">&times;</button>
+            </div>
+            <div className="p-4 flex-1 overflow-y-auto grid grid-cols-4 gap-3">
+              {Object.keys(marks).length === 0 ? <p className="col-span-4 text-center text-gray-500 py-4">目前沒有任何標註</p> : (
+                Object.entries(marks).map(([idxStr, markId]) => {
+                  const qIdx = parseInt(idxStr, 10);
+                  const markOpt = MARK_OPTIONS.find(m => m.id === markId);
+                  return (
+                    <button key={qIdx} onClick={() => { setCurrentQuestionIndex(qIdx); setShowMarksModal(false); }} className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex flex-col items-center justify-center hover:bg-blue-50 transition">
+                      <span className="text-sm text-gray-500 mb-1">第 {qIdx + 1} 題</span>
+                      <span className={`text-xl font-bold ${markOpt?.colorClass || ''}`}>{markOpt?.symbol}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteModalId && (
-        <div className="absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full text-center space-y-4 animate-scale-in">
             <div className="text-5xl mb-2">⚠️</div>
             <h2 className="text-2xl font-bold text-gray-800">確定要刪除？</h2>
