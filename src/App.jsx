@@ -199,6 +199,15 @@ export default function App() {
     setUserAnswers(prev => ({ ...prev, [currentQuestionIndex]: option }));
   };
 
+  const handleToggleMark = (markId) => {
+    setMarks(prev => {
+      const newMarks = { ...prev };
+      if (newMarks[currentQuestionIndex] === markId) delete newMarks[currentQuestionIndex];
+      else newMarks[currentQuestionIndex] = markId;
+      return newMarks;
+    });
+  };
+
   const proceedToNext = (isLast) => {
     if (isLast) setCurrentPage('review');
     else setCurrentQuestionIndex(prev => prev + 1);
@@ -282,6 +291,175 @@ export default function App() {
     setDeleteModalId(null);
   };
 
+  // --- UI 元件：起始設定頁面 (這段剛剛不小心漏掉了) ---
+  const renderSetupPage = () => (
+    <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-xl p-6 flex flex-col max-h-[95vh] overflow-hidden relative z-10">
+      
+      <div className="flex justify-between items-center mb-4 shrink-0">
+        <h1 className="text-xl font-bold text-gray-800">選擇題自動批改</h1>
+        
+        {user && user.isAnonymous && (
+          <button onClick={handleGoogleLogin} className="text-xs bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-full hover:bg-blue-200 transition shadow-sm">
+            👉 登入跨裝置同步
+          </button>
+        )}
+        {user && !user.isAnonymous && (
+          <div className="flex items-center space-x-2">
+            <span className="text-xs text-gray-500 truncate max-w-[120px]">{user.email}</span>
+            <button onClick={handleLogout} className="text-xs bg-gray-200 text-gray-700 font-bold px-3 py-1.5 rounded-full hover:bg-gray-300 transition">
+              登出
+            </button>
+          </div>
+        )}
+      </div>
+      
+      <div className="flex border-b mb-6 shrink-0">
+        <button onClick={() => setSetupTab('new')} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'new' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>📝 建立新測驗</button>
+        <button onClick={() => setSetupTab('history')} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'history' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>📂 作答紀錄</button>
+      </div>
+
+      {setupError && (
+        <div className="p-3 mb-4 bg-red-100 text-red-700 rounded-lg text-sm font-medium shrink-0">
+          {setupError}
+        </div>
+      )}
+
+      {setupTab === 'new' && (
+        <div className="space-y-4 overflow-y-auto pr-2 pb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">本次作答紀錄名稱</label>
+            <input 
+              type="text" 
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="例如: 第一次期中考練習"
+              value={recordName}
+              onChange={(e) => setRecordName(e.target.value)}
+            />
+          </div>
+          
+          <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 以供對照 (選填)</label>
+            <input 
+              type="file" 
+              accept="application/pdf"
+              onChange={handlePdfUpload}
+              className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+            />
+            {pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 檔案已成功載入</span>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">總題數</label>
+            <input 
+              type="text" inputMode="numeric" pattern="[0-9]*"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="例如: 50" value={totalQuestions} onChange={(e) => setTotalQuestions(e.target.value.replace(/[^0-9]/g, ''))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">選項數量</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[3, 4, 5].map(num => (
+                <button key={num} className={`py-2 rounded-lg font-medium transition ${optionCount === num ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setOptionCount(num)}>{num} 個</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">每題配分</label>
+            <input 
+              type="text" inputMode="numeric" pattern="[0-9.]*"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="例如: 2" value={pointsPerQuestion} onChange={(e) => setPointsPerQuestion(e.target.value.replace(/[^0-9.]/g, ''))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">批改方式</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button className={`py-2 rounded-lg font-medium transition ${gradingMode === 'per-question' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setGradingMode('per-question')}>逐題批改</button>
+              <button className={`py-2 rounded-lg font-medium transition ${gradingMode === 'all-at-once' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setGradingMode('all-at-once')}>作答完一次批改</button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">正確答案貼上區</label>
+            <textarea
+              className="w-full p-3 border border-gray-300 rounded-lg h-24 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+              placeholder="貼上文字即可，系統會自動擷取英文字母作為答案。例如: 1.A 2.B 3.C ..."
+              value={rawAnswers} onChange={(e) => setRawAnswers(e.target.value)}
+            />
+          </div>
+          <button onClick={handleStart} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition mt-2 shrink-0">開始作答</button>
+        </div>
+      )}
+
+      {setupTab === 'history' && (
+        <div className="flex-1 overflow-y-auto pr-2 space-y-3 pb-4">
+          {authError && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex flex-col items-center text-center">
+              <span className="text-3xl mb-2">⚠️</span>
+              <p className="font-bold mb-1">連線雲端發生問題</p>
+              <p className="text-sm">{authError}</p>
+            </div>
+          )}
+          
+          {!authError && !user && <div className="text-center text-gray-500 py-8">正在連線至雲端...</div>}
+          {!authError && user && records.length === 0 && <div className="text-center text-gray-500 py-8 border-2 border-dashed border-gray-200 rounded-xl">目前還沒有任何紀錄喔！</div>}
+          
+          {!authError && records.map(record => {
+            let displayStatus = 'in-progress';
+            let statusColor = 'bg-yellow-100 text-yellow-700';
+            let statusText = '作答中';
+
+            if (record.status === 'completed') {
+              displayStatus = 'completed';
+              statusColor = 'bg-green-100 text-green-700';
+              statusText = '已完成';
+            } else if (!record.userAnswers || Object.keys(record.userAnswers).length === 0) {
+              displayStatus = 'not-started';
+              statusColor = 'bg-red-100 text-red-700';
+              statusText = '未開始';
+            }
+
+            let scoreDisplay = null;
+            if (displayStatus === 'completed' && record.correctAnswers && record.pointsPerQuestion) {
+              let correctCount = 0;
+              record.correctAnswers.forEach((ans, idx) => {
+                if (record.userAnswers && record.userAnswers[idx] === ans) {
+                  correctCount++;
+                }
+              });
+              const score = correctCount * parseFloat(record.pointsPerQuestion);
+              const totalScore = record.correctAnswers.length * parseFloat(record.pointsPerQuestion);
+              scoreDisplay = `${score} / ${totalScore} 分`;
+            }
+
+            return (
+              <div key={record.id} className="p-4 border border-gray-200 rounded-xl bg-gray-50 shadow-sm flex flex-col space-y-3">
+                <div className="flex justify-between items-start space-x-2">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-bold text-gray-800 text-lg break-words">{record.recordName || '未命名測驗'}</h3>
+                    <p className="text-xs text-gray-500">{new Date(record.updatedAt).toLocaleString()}</p>
+                    {scoreDisplay && <p className="text-sm font-bold text-blue-600 mt-1">得分: {scoreDisplay}</p>}
+                  </div>
+                  <span className={`text-xs font-bold px-2 py-1 rounded whitespace-nowrap shrink-0 ${statusColor}`}>
+                    {statusText}
+                  </span>
+                </div>
+                <div className="flex justify-end space-x-2 border-t border-gray-200 pt-3">
+                  {displayStatus === 'completed' ? (
+                    <button onClick={() => handleViewResult(record)} className="text-sm bg-gray-800 hover:bg-black text-white font-bold px-4 py-2 rounded-lg transition">查看結果</button>
+                  ) : (
+                    <button onClick={() => handleResumeRecord(record)} className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg transition">繼續作答</button>
+                  )}
+                  <button onClick={() => setDeleteModalId(record.id)} className="text-sm bg-red-100 hover:bg-red-200 text-red-700 font-bold px-4 py-2 rounded-lg transition">刪除</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
   // --- UI 元件：作答頁面 (分為電腦版與手機版兩種佈局) ---
   const renderQuizPage = () => {
     const options = ALPHABET.slice(0, optionCount);
@@ -343,7 +521,6 @@ export default function App() {
 
         {/* --- 手機版 UI (根據草圖全新設計，隱藏於電腦) --- */}
         <div className="flex md:hidden w-full h-full flex-col overflow-hidden bg-[#F8F9FA]">
-          {/* 標頭縮小，只留題號與首頁按鈕 */}
           <div className="px-4 py-2 flex justify-between items-center shrink-0">
             <div className="font-bold text-black text-sm flex items-center">
               <span>第</span>
@@ -361,10 +538,7 @@ export default function App() {
             </button>
           </div>
           
-          {/* 橫式操作區塊 */}
           <div className="flex-1 flex flex-row items-center px-2 pb-2 gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-            
-            {/* 左側：標註選單與看標註按鈕 */}
             <div className="flex flex-col gap-2 shrink-0">
               <div className="relative">
                 <select
@@ -392,7 +566,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* 中間：選項按鈕 */}
             <div className="flex-1 flex flex-row items-center justify-center gap-2 px-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
               {options.map(opt => (
                 <button 
@@ -409,13 +582,11 @@ export default function App() {
               ))}
             </div>
 
-            {/* 右側：下一題 / 交卷按鈕 */}
             <div className="shrink-0 flex items-center">
               <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-sm transition whitespace-nowrap text-sm">
                 {isLastQuestion ? '交卷' : '下一題'}
               </button>
             </div>
-
           </div>
         </div>
       </>
@@ -545,7 +716,7 @@ export default function App() {
 
       {currentPage !== 'setup' && (
         <>
-          {/* 左側 / 上方：PDF 瀏覽區。作答時佔據 70% 高度 */}
+          {/* 左側 / 上方：PDF 瀏覽區 */}
           <div className={`
             ${currentPage === 'result' 
               ? 'absolute inset-0 md:relative md:flex-1 md:h-full z-0' 
@@ -570,7 +741,7 @@ export default function App() {
             )}
           </div>
 
-          {/* 右側 / 下方：App 介面區。作答時佔據 30% 高度 */}
+          {/* 右側 / 下方：App 介面區 */}
           <div className={`
             ${currentPage === 'result' 
               ? `fixed bottom-0 left-0 right-0 z-10 bg-white rounded-t-2xl shadow-[0_-10px_20px_rgba(0,0,0,0.2)] transition-transform duration-300 ease-in-out md:relative md:w-[400px] md:h-full md:rounded-none md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] md:translate-y-0 h-[85vh] flex flex-col ${isResultExpanded ? 'translate-y-0' : 'translate-y-[calc(100%-40px)]'}`
