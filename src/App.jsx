@@ -403,6 +403,16 @@ export default function App() {
                <span className="font-medium text-gray-700">題 / 共 {correctAnswers.length} 題</span>
              </div>
           </div>
+          {/* 新增的回首頁按鈕 */}
+          <button 
+            onClick={() => {
+              setCurrentPage('setup');
+              setSetupTab('history');
+            }} 
+            className="text-sm bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 font-bold py-2 px-3 rounded-lg shadow-sm transition-colors"
+          >
+            回首頁
+          </button>
         </div>
 
         <div className="p-4 flex justify-center space-x-4 border-b">
