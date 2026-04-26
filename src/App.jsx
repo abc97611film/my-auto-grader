@@ -51,9 +51,8 @@ export default function App() {
   const [deleteModalId, setDeleteModalId] = useState(null);
   const [authError, setAuthError] = useState('');
 
-  // --- 新增 PDF 相關狀態 ---
   const [pdfUrl, setPdfUrl] = useState(null);
-  const [isResultExpanded, setIsResultExpanded] = useState(true); // 手機版結果頁面收折狀態
+  const [isResultExpanded, setIsResultExpanded] = useState(true);
 
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -150,7 +149,6 @@ export default function App() {
     }
   };
 
-  // --- 處理 PDF 檔案上傳 ---
   const handlePdfUpload = (e) => {
     const file = e.target.files[0];
     if (file && file.type === 'application/pdf') {
@@ -190,7 +188,7 @@ export default function App() {
     setUserAnswers({});
     setMarks({});
     setCurrentQuestionIndex(0);
-    setIsResultExpanded(true); // 重置收折狀態
+    setIsResultExpanded(true); 
     
     const newId = Date.now().toString();
     setCurrentRecordId(newId);
@@ -199,15 +197,6 @@ export default function App() {
 
   const handleSelectAnswer = (option) => {
     setUserAnswers(prev => ({ ...prev, [currentQuestionIndex]: option }));
-  };
-
-  const handleToggleMark = (markId) => {
-    setMarks(prev => {
-      const newMarks = { ...prev };
-      if (newMarks[currentQuestionIndex] === markId) delete newMarks[currentQuestionIndex];
-      else newMarks[currentQuestionIndex] = markId;
-      return newMarks;
-    });
   };
 
   const proceedToNext = (isLast) => {
@@ -236,7 +225,7 @@ export default function App() {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
       setDoc(docRef, { status: 'completed', updatedAt: Date.now() }, { merge: true }).catch(console.error);
     }
-    setIsResultExpanded(true); // 進入結果頁面時預設展開
+    setIsResultExpanded(true);
     setCurrentPage('result');
   };
 
@@ -293,10 +282,8 @@ export default function App() {
     setDeleteModalId(null);
   };
 
-  // --- UI 元件：起始設定頁面 (維持在畫面正中央) ---
   const renderSetupPage = () => (
     <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-xl p-6 flex flex-col max-h-[95vh] overflow-hidden relative z-10">
-      
       <div className="flex justify-between items-center mb-4 shrink-0">
         <h1 className="text-xl font-bold text-gray-800">選擇題自動批改</h1>
         
@@ -339,7 +326,6 @@ export default function App() {
             />
           </div>
           
-          {/* 新增：上傳 PDF 區塊 */}
           <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
             <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 以供對照 (選填)</label>
             <input 
@@ -463,66 +449,100 @@ export default function App() {
     </div>
   );
 
-  // --- UI 元件：作答頁面 (移除原本的置中寬度限制，改為適應容器) ---
+  // --- UI 元件：作答頁面 (更新為極簡水平佈局) ---
   const renderQuizPage = () => {
     const options = ALPHABET.slice(0, optionCount);
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
 
     return (
       <div className="w-full h-full flex flex-col overflow-hidden bg-white">
-        <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
-          <div className="flex flex-col flex-1 min-w-0 pr-2">
-             <span className="text-sm font-bold text-blue-600 mb-1 leading-tight break-words">
-               {recordName}
-               <span className="block mt-0.5 text-xs opacity-75 font-normal">(自動儲存中)</span>
-             </span>
-             <div className="flex items-center space-x-2">
-               <span className="font-medium text-gray-700">第</span>
-               <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 border border-gray-300 rounded outline-none font-bold text-blue-600">
-                 {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
-               </select>
-               <span className="font-medium text-gray-700">題 / {correctAnswers.length} 題</span>
-             </div>
+        
+        {/* 極簡縮小的標頭 */}
+        <div className="px-3 py-1.5 border-b bg-gray-50 flex justify-between items-center shrink-0 shadow-sm z-10">
+          <div className="flex items-center space-x-1 font-medium text-gray-700 text-sm">
+            <span>第</span>
+            <select 
+              value={currentQuestionIndex} 
+              onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} 
+              className="p-0 border-b-2 border-blue-300 bg-transparent outline-none font-bold text-blue-600 text-center"
+            >
+              {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
+            </select>
+            <span>題 / {correctAnswers.length} 題</span>
           </div>
+          
           <button 
             onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
-            className="flex items-center justify-center w-10 h-10 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
+            className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-md shadow-sm transition-all shrink-0"
             title="回首頁"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
               <polyline points="9 22 9 12 15 12 15 22"></polyline>
             </svg>
           </button>
         </div>
 
-        <div className="p-4 flex justify-center space-x-4 border-b shrink-0">
-          {MARK_OPTIONS.map(mark => (
-            <button 
-              key={mark.id} 
-              onClick={() => handleToggleMark(mark.id)} 
-              className={`text-2xl w-12 h-12 flex items-center justify-center rounded-full transition-all font-bold ${marks[currentQuestionIndex] === mark.id ? 'bg-blue-100 scale-110 shadow-md opacity-100 ' + mark.colorClass : 'bg-gray-50 hover:bg-gray-100 opacity-40 hover:opacity-100 ' + mark.colorClass}`}
-            >
-              {mark.symbol}
+        {/* 橫式單一操作區 (包含左側選單、中間按鈕、右側下一題) */}
+        <div className="flex-1 flex flex-row items-center justify-between p-2 sm:p-4 gap-2 overflow-x-auto">
+          
+          {/* 最左邊：標註選單區 */}
+          <div className="flex flex-col gap-1.5 shrink-0 pr-2 sm:pr-4 border-r border-gray-200 justify-center">
+            <div className="relative">
+              <select
+                value={marks[currentQuestionIndex] || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setMarks(prev => {
+                    const newMarks = { ...prev };
+                    if (!val) delete newMarks[currentQuestionIndex];
+                    else newMarks[currentQuestionIndex] = val;
+                    return newMarks;
+                  });
+                }}
+                className="appearance-none bg-white border border-gray-300 text-gray-700 py-1.5 pl-2 pr-6 rounded-md text-xs sm:text-sm font-bold outline-none focus:border-blue-500 shadow-sm w-[80px]"
+              >
+                <option value="">標註...</option>
+                {MARK_OPTIONS.map(m => <option key={m.id} value={m.id}>{m.symbol}</option>)}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1.5 text-gray-500">
+                <svg className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+              </div>
+            </div>
+            <button onClick={() => setShowMarksModal(true)} className="bg-gray-600 hover:bg-gray-700 text-white text-xs font-bold py-1.5 px-2 rounded-md shadow-sm transition">
+              看標註
             </button>
-          ))}
-        </div>
+          </div>
 
-        <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-gray-50/50">
-          {options.map(opt => (
-            <button key={opt} onClick={() => handleSelectAnswer(opt)} className={`w-full p-4 rounded-xl border-2 text-xl font-bold transition ${userAnswers[currentQuestionIndex] === opt ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-gray-50'}`}>{opt}</button>
-          ))}
-        </div>
+          {/* 中間：選項區 (單一橫排) */}
+          <div className="flex-1 flex flex-row items-center justify-center gap-1.5 sm:gap-3 px-1 min-w-max">
+            {options.map(opt => (
+              <button 
+                key={opt} 
+                onClick={() => handleSelectAnswer(opt)} 
+                className={`w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-xl border-2 text-lg md:text-xl font-bold flex items-center justify-center transition-colors shrink-0 ${
+                  userAnswers[currentQuestionIndex] === opt 
+                  ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' 
+                  : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-blue-200 hover:bg-white'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
 
-        <div className="p-4 border-t bg-white flex justify-between items-center shrink-0">
-          <button onClick={() => setShowMarksModal(true)} className="text-gray-600 font-medium hover:text-gray-800 px-3 py-2 rounded">看標註</button>
-          <button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow transition">{isLastQuestion ? '作答完成' : '下一題'}</button>
+          {/* 右邊：下一題 / 交卷按鈕 */}
+          <div className="shrink-0 pl-2 sm:pl-4 border-l border-gray-200 h-full flex items-center">
+            <button onClick={handleNext} className="bg-blue-500 hover:bg-blue-600 text-white font-bold h-10 sm:h-12 px-3 sm:px-5 rounded-xl shadow-sm transition whitespace-nowrap text-sm sm:text-base">
+              {isLastQuestion ? '交卷' : '下一題'}
+            </button>
+          </div>
+
         </div>
       </div>
     );
   };
 
-  // --- UI 元件：作答檢查頁面 ---
   const renderReviewPage = () => {
     return (
       <div className="w-full h-full flex flex-col overflow-hidden bg-white">
@@ -564,7 +584,6 @@ export default function App() {
     );
   };
 
-  // --- UI 元件：批改結果頁面 ---
   const renderResultPage = () => {
     if (!resultData) return null;
     const { score, totalScore, details } = resultData;
@@ -572,14 +591,13 @@ export default function App() {
     return (
       <div className="w-full h-full flex flex-col overflow-hidden bg-white">
         
-        {/* 手機版專用的收折拉桿 */}
         <div 
-          className="md:hidden h-12 w-full bg-white rounded-t-2xl flex flex-col items-center justify-center cursor-pointer shadow-[0_-2px_5px_rgba(0,0,0,0.05)] shrink-0 border-b border-gray-100"
+          className="md:hidden h-10 w-full bg-white rounded-t-2xl flex flex-col items-center justify-center cursor-pointer shadow-[0_-2px_5px_rgba(0,0,0,0.05)] shrink-0 border-b border-gray-100"
           onClick={() => setIsResultExpanded(!isResultExpanded)}
         >
           <div className="w-10 h-1.5 bg-gray-300 rounded-full mb-1"></div>
           <span className="text-[10px] text-gray-500 font-bold tracking-widest uppercase">
-            {isResultExpanded ? '下滑收起結果查看題目' : '上拉展開批改結果'}
+            {isResultExpanded ? '下滑收起' : '上拉展開'}
           </span>
         </div>
 
@@ -637,7 +655,6 @@ export default function App() {
     );
   };
 
-  // --- 主渲染邏輯：支援分割畫面 ---
   return (
     <div className={`min-h-[100dvh] bg-gray-100 font-sans text-gray-900 relative ${currentPage === 'setup' ? 'flex items-center justify-center p-4' : 'flex flex-col md:flex-row w-screen h-[100dvh] overflow-hidden'}`}>
       <style dangerouslySetInnerHTML={{__html: `
@@ -645,17 +662,17 @@ export default function App() {
         .animate-scale-in { animation: scaleIn 0.2s ease-out forwards; }
       `}} />
       
-      {/* 獨立顯示起始頁面 */}
       {currentPage === 'setup' && renderSetupPage()}
 
-      {/* 進入作答/結果頁面時啟動分割畫面 */}
       {currentPage !== 'setup' && (
         <>
-          {/* 左側 / 上方：PDF 瀏覽區 */}
+          {/* 左側 / 上方：PDF 瀏覽區。作答時佔據 70% 高度 */}
           <div className={`
             ${currentPage === 'result' 
-              ? 'absolute inset-0 md:relative md:flex-1 md:h-full z-0' // 手機結果頁 PDF 墊底
-              : 'h-[40vh] w-full md:h-full md:flex-1' // 手機作答頁 PDF 佔上方 40%
+              ? 'absolute inset-0 md:relative md:flex-1 md:h-full z-0' 
+              : currentPage === 'quiz'
+                ? 'h-[70dvh] w-full md:h-full md:flex-1' 
+                : 'h-[40dvh] w-full md:h-full md:flex-1'
             } 
             bg-gray-800 flex flex-col items-center justify-center relative
           `}>
@@ -674,11 +691,13 @@ export default function App() {
             )}
           </div>
 
-          {/* 右側 / 下方：App 介面區 */}
+          {/* 右側 / 下方：App 介面區。作答時佔據 30% 高度 */}
           <div className={`
             ${currentPage === 'result' 
-              ? `fixed bottom-0 left-0 right-0 z-10 bg-white rounded-t-2xl shadow-[0_-10px_20px_rgba(0,0,0,0.2)] transition-transform duration-300 ease-in-out md:relative md:w-[400px] md:h-full md:rounded-none md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] md:translate-y-0 h-[85vh] flex flex-col ${isResultExpanded ? 'translate-y-0' : 'translate-y-[calc(100%-48px)]'}`
-              : 'h-[60vh] w-full md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10 shrink-0'
+              ? `fixed bottom-0 left-0 right-0 z-10 bg-white rounded-t-2xl shadow-[0_-10px_20px_rgba(0,0,0,0.2)] transition-transform duration-300 ease-in-out md:relative md:w-[400px] md:h-full md:rounded-none md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] md:translate-y-0 h-[85vh] flex flex-col ${isResultExpanded ? 'translate-y-0' : 'translate-y-[calc(100%-40px)]'}`
+              : currentPage === 'quiz'
+                ? 'h-[30dvh] w-full md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10 shrink-0'
+                : 'h-[60dvh] w-full md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10 shrink-0'
             }
           `}>
             {currentPage === 'quiz' && renderQuizPage()}
@@ -688,7 +707,6 @@ export default function App() {
         </>
       )}
 
-      {/* 共用的 Modal 彈出視窗 */}
       {feedbackModal.isOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full text-center space-y-4 animate-scale-in">
