@@ -6,13 +6,19 @@ import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'fi
 // --- Firebase 初始化區塊 ---
 // 為了讓你在本地端或 Vercel 也能順利儲存，請在此填寫你的 Firebase 設定檔。
 // 若在 Canvas 平台內執行，則會自動抓取系統提供的設定。
-const firebaseConfig = {
-  apiKey: "AIzaSyDbY2XXc-gd27XrngbEdkf2hnAFBkh5D4U",
-  authDomain: "my-auto-grader-1a658.firebaseapp.com",
-  projectId: "my-auto-grader-1a658",
-  storageBucket: "my-auto-grader-1a658.firebasestorage.app",
-  messagingSenderId: "966517075493",
-  appId: "1:966517075493:web:ad7deb77f0e7e1920659cc"
+const getFirebaseConfig = () => {
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+    return JSON.parse(__firebase_config);
+  }
+  // 【請替換這裡！】把你在 Firebase Console 拿到的設定貼到這邊
+  return {
+    apiKey: "AIzaSyDbY2XXc-gd27XrngbEdkf2hnAFBkh5D4U",
+    authDomain: "my-auto-grader-1a658.firebaseapp.com",
+    projectId: "my-auto-grader-1a658",
+    storageBucket: "my-auto-grader-1a658.firebasestorage.app",
+    messagingSenderId: "966517075493",
+    appId: "1:966517075493:web:ad7deb77f0e7e1920659cc"
+  };
 };
 
 let app, auth, db;
@@ -48,6 +54,7 @@ export default function App() {
   const [currentRecordId, setCurrentRecordId] = useState(null);
   const [recordName, setRecordName] = useState('');
   const [deleteModalId, setDeleteModalId] = useState(null);
+  const [authError, setAuthError] = useState(''); // 新增：用來顯示詳細的連線錯誤訊息
 
   // 頁面狀態: 'setup', 'quiz', 'review', 'result'
   const [currentPage, setCurrentPage] = useState('setup');
@@ -72,7 +79,11 @@ export default function App() {
 
   // --- Firebase 登入與資料抓取 ---
   useEffect(() => {
-    if (!auth) return;
+    if (!auth) {
+      setAuthError("尚未填寫 Firebase 金鑰 (apiKey等)，請檢查 VS Code 裡的程式碼是否已填妥！");
+      return;
+    }
+    
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -82,8 +93,10 @@ export default function App() {
         }
       } catch (e) {
         console.error("登入錯誤:", e);
+        setAuthError(`連線被拒絕：${e.message}。請確認 Firebase 後台的 Authentication 是否已經啟用「匿名(Anonymous)」登入！`);
       }
     };
+    
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
@@ -98,6 +111,7 @@ export default function App() {
       setRecords(data);
     }, (error) => {
       console.error("抓取紀錄失敗:", error);
+      setAuthError(`資料讀取失敗：${error.message}。請確認 Firestore 是否為「測試模式」！`);
     });
     return () => unsubscribe();
   }, [user]);
@@ -334,9 +348,19 @@ export default function App() {
       {/* 作答紀錄區塊 */}
       {setupTab === 'history' && (
         <div className="flex-1 overflow-y-auto pr-2 space-y-3 pb-4">
-          {!user && <div className="text-center text-gray-500 py-8">正在連線至雲端...</div>}
-          {user && records.length === 0 && <div className="text-center text-gray-500 py-8 border-2 border-dashed border-gray-200 rounded-xl">目前還沒有任何紀錄喔！</div>}
-          {records.map(record => (
+          {/* 新增的錯誤處理提示區塊 */}
+          {authError && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex flex-col items-center text-center">
+              <span className="text-3xl mb-2">⚠️</span>
+              <p className="font-bold mb-1">連線雲端發生問題</p>
+              <p className="text-sm">{authError}</p>
+            </div>
+          )}
+          
+          {!authError && !user && <div className="text-center text-gray-500 py-8">正在連線至雲端...</div>}
+          {!authError && user && records.length === 0 && <div className="text-center text-gray-500 py-8 border-2 border-dashed border-gray-200 rounded-xl">目前還沒有任何紀錄喔！</div>}
+          
+          {!authError && records.map(record => (
             <div key={record.id} className="p-4 border border-gray-200 rounded-xl bg-gray-50 shadow-sm flex flex-col space-y-3">
               <div className="flex justify-between items-start">
                 <div>
