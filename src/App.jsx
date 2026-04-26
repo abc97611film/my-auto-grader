@@ -372,7 +372,7 @@ export default function App() {
               <div key={record.id} className="p-4 border border-gray-200 rounded-xl bg-gray-50 shadow-sm flex flex-col space-y-3">
                 <div className="flex justify-between items-start space-x-2">
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-bold text-gray-800 text-lg truncate">{record.recordName || '未命名測驗'}</h3>
+                    <h3 className="font-bold text-gray-800 text-lg break-words">{record.recordName || '未命名測驗'}</h3>
                     <p className="text-xs text-gray-500">{new Date(record.updatedAt).toLocaleString()}</p>
                     {scoreDisplay && <p className="text-sm font-bold text-blue-600 mt-1">得分: {scoreDisplay}</p>}
                   </div>
@@ -404,7 +404,7 @@ export default function App() {
       <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md flex flex-col h-[90vh] overflow-hidden relative">
         <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2">
           <div className="flex flex-col flex-1 min-w-0 pr-2">
-             <span className="text-sm font-bold text-blue-600 mb-1 leading-tight truncate">
+             <span className="text-sm font-bold text-blue-600 mb-1 leading-tight break-words">
                {recordName}
                <span className="block mt-0.5 text-xs opacity-75 font-normal">(自動儲存中)</span>
              </span>
