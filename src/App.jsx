@@ -211,14 +211,15 @@ export default function App() {
       const userAns = userAnswers[index];
       const isCorrect = userAns === correctAns;
       if (isCorrect) correctCount++;
-      return { questionNum: index + 1, userAns: userAns || '未作答', correctAns, isCorrect };
+      const markOpt = marks[index] ? MARK_OPTIONS.find(m => m.id === marks[index]) : null;
+      return { questionNum: index + 1, userAns: userAns || '未作答', correctAns, isCorrect, markOpt };
     });
     return {
       score: correctCount * parseFloat(pointsPerQuestion),
       totalScore: correctAnswers.length * parseFloat(pointsPerQuestion),
       details
     };
-  }, [correctAnswers, userAnswers, pointsPerQuestion]);
+  }, [correctAnswers, userAnswers, pointsPerQuestion, marks]);
 
   const handleResumeRecord = (record) => {
     setRecordName(record.recordName || '');
@@ -339,7 +340,6 @@ export default function App() {
           {!authError && user && records.length === 0 && <div className="text-center text-gray-500 py-8 border-2 border-dashed border-gray-200 rounded-xl">目前還沒有任何紀錄喔！</div>}
           
           {!authError && records.map(record => {
-            // 判斷作答狀態與對應顏色
             let displayStatus = 'in-progress';
             let statusColor = 'bg-yellow-100 text-yellow-700';
             let statusText = '作答中';
@@ -354,7 +354,6 @@ export default function App() {
               statusText = '未開始';
             }
 
-            // 若為已完成，計算顯示分數
             let scoreDisplay = null;
             if (displayStatus === 'completed' && record.correctAnswers && record.pointsPerQuestion) {
               let correctCount = 0;
@@ -416,7 +415,6 @@ export default function App() {
                <span className="font-medium text-gray-700">題 / 共 {correctAnswers.length} 題</span>
              </div>
           </div>
-          {/* 修改後的回首頁按鈕：黑色單色 SVG 房子圖示 */}
           <button 
             onClick={() => {
               setCurrentPage('setup');
@@ -555,9 +553,15 @@ export default function App() {
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {details.map(item => (
             <div key={item.questionNum} className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${item.isCorrect ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-3">
                 <span className="font-bold text-gray-500 w-8">#{item.questionNum}</span>
-                <div>
+                {/* 新增顯示該題的標註圖示 */}
+                <div className="w-6 text-center shrink-0">
+                  {item.markOpt && (
+                    <span className={`text-xl font-bold ${item.markOpt.colorClass}`}>{item.markOpt.symbol}</span>
+                  )}
+                </div>
+                <div className="pl-2">
                   <div className="text-xs text-gray-500 mb-1">您的答案</div>
                   <div className={`font-bold text-lg ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</div>
                 </div>
