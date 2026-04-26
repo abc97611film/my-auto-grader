@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-// 這裡新增了 GoogleAuthProvider, signInWithPopup, signOut 來處理 Google 登入
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+// 更新：引入了 signInWithRedirect 和 getRedirectResult
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
 // --- Firebase 初始化區塊 ---
@@ -69,28 +69,43 @@ export default function App() {
   const [feedbackModal, setFeedbackModal] = useState({ isOpen: false, isCorrect: false, correctAnswer: '' });
   const [showMarksModal, setShowMarksModal] = useState(false);
 
+  // --- 手機友善的登入機制 ---
   useEffect(() => {
     if (!auth) {
       setAuthError("尚未填寫 Firebase 金鑰 (apiKey等)，請檢查 VS Code 裡的程式碼是否已填妥！");
       return;
     }
     
-    const initAuth = async () => {
+    const initializeAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (e) {
-        console.error("登入錯誤:", e);
-        setAuthError(`連線被拒絕：${e.message}。請確認 Firebase 後台的 Authentication 是否已經啟用「匿名(Anonymous)」登入！`);
+        // 1. 先處理整頁跳轉回來的結果 (這對手機非常重要)
+        await getRedirectResult(auth);
+      } catch (error) {
+        console.error("跳轉登入失敗:", error);
+        setAuthError(`跳轉登入發生錯誤：${error.message}`);
       }
+
+      // 2. 監聽目前的登入狀態
+      const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+        if (currentUser) {
+          setUser(currentUser);
+        } else {
+          // 如果沒有人登入，才給予無名氏身分
+          try {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+              await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+              await signInAnonymously(auth);
+            }
+          } catch (e) {
+            console.error("無名氏登入失敗:", e);
+          }
+        }
+      });
+      return () => unsubscribe();
     };
     
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
+    initializeAuth();
   }, []);
 
   useEffect(() => {
@@ -126,15 +141,14 @@ export default function App() {
     }
   }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName]);
 
-  // --- 新增：處理 Google 登入與登出 ---
+  // --- 改用整頁跳轉 (Redirect) 解決手機彈出視窗阻擋問題 ---
   const handleGoogleLogin = async () => {
     if (!auth) return;
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      await signInWithRedirect(auth, provider);
     } catch (error) {
       console.error("Google 登入失敗:", error);
-      // 有些瀏覽器會阻擋彈出視窗，會顯示在這裡
       setAuthError(`Google 登入失敗：${error.message}`);
     }
   };
@@ -143,7 +157,7 @@ export default function App() {
     if (!auth) return;
     try {
       await signOut(auth);
-      window.location.reload(); // 登出後重新載入網頁，會自動變回無名氏
+      window.location.reload(); 
     } catch (error) {
       console.error("登出失敗:", error);
     }
@@ -283,7 +297,6 @@ export default function App() {
   const renderSetupPage = () => (
     <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md p-6 flex flex-col h-[90vh]">
       
-      {/* 標題與登入區塊 */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-bold text-gray-800">答題批改 App</h1>
         
