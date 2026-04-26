@@ -1,6 +1,6 @@
 {
-  "name": "答題自動批改 App",
-  "short_name": "答題批改",
+  "name": "選擇題自動批改",
+  "short_name": "選擇題自動批改",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F3F4F6",
