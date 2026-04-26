@@ -727,7 +727,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- 手機版 UI (自動高度 + 橫向捲軸卡片) --- */}
+        {/* --- 手機版 UI (自動高度 + 橫向捲軸卡片 + 修復裝飾定位) --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
              <div className="flex flex-col flex-1 min-w-0 pr-2">
@@ -752,13 +752,14 @@ export default function App() {
 
           <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {details.map(item => (
-              <div key={item.questionNum} className={`flex flex-col items-center justify-center w-[100px] h-28 shrink-0 rounded-xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <div className="flex w-full px-2 justify-between items-center mb-1">
+              <div key={item.questionNum} className={`relative overflow-hidden flex flex-col items-center justify-center w-[100px] h-28 shrink-0 rounded-xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                {/* 這裡加了 relative 和 overflow-hidden 解決右下角浮水印跑版問題 */}
+                <div className="flex w-full px-2 justify-between items-center mb-1 z-10">
                   <span className="text-xs font-bold text-gray-500">#{item.questionNum}</span>
                   <span className={`text-xs font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
                 </div>
                 
-                <div className="flex items-center justify-center gap-2 mt-1">
+                <div className="flex items-center justify-center gap-2 mt-1 z-10">
                   <div className="flex flex-col items-center">
                     <span className="text-[10px] text-gray-400">你答</span>
                     <span className={`text-xl font-bold ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</span>
@@ -773,8 +774,8 @@ export default function App() {
                     </>
                   )}
                 </div>
-                {/* 右下角的打勾或叉叉小圖示裝飾 */}
-                <div className="absolute bottom-1 right-2 opacity-20 text-2xl">
+                {/* 右下角的打勾或叉叉小圖示裝飾 (現在會乖乖待在卡片內了) */}
+                <div className="absolute bottom-1 right-2 opacity-20 text-2xl pointer-events-none">
                   {item.isCorrect ? '✅' : '❌'}
                 </div>
               </div>
