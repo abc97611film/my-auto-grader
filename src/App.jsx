@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-// 更新：引入了 signInWithRedirect 和 getRedirectResult
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut } from 'firebase/auth';
+// 更新：換回 signInWithPopup，這是跨網域最穩定的作法
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
 // --- Firebase 初始化區塊 ---
@@ -69,43 +69,30 @@ export default function App() {
   const [feedbackModal, setFeedbackModal] = useState({ isOpen: false, isCorrect: false, correctAnswer: '' });
   const [showMarksModal, setShowMarksModal] = useState(false);
 
-  // --- 手機友善的登入機制 ---
+  // --- 改回最單純的監聽模式 ---
   useEffect(() => {
     if (!auth) {
       setAuthError("尚未填寫 Firebase 金鑰 (apiKey等)，請檢查 VS Code 裡的程式碼是否已填妥！");
       return;
     }
     
-    const initializeAuth = async () => {
-      try {
-        // 1. 先處理整頁跳轉回來的結果 (這對手機非常重要)
-        await getRedirectResult(auth);
-      } catch (error) {
-        console.error("跳轉登入失敗:", error);
-        setAuthError(`跳轉登入發生錯誤：${error.message}`);
-      }
-
-      // 2. 監聽目前的登入狀態
-      const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-        if (currentUser) {
-          setUser(currentUser);
-        } else {
-          // 如果沒有人登入，才給予無名氏身分
-          try {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-              await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-              await signInAnonymously(auth);
-            }
-          } catch (e) {
-            console.error("無名氏登入失敗:", e);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+      } else {
+        // 如果沒有人登入，才給予無名氏身分
+        try {
+          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+          } else {
+            await signInAnonymously(auth);
           }
+        } catch (e) {
+          console.error("無名氏登入失敗:", e);
         }
-      });
-      return () => unsubscribe();
-    };
-    
-    initializeAuth();
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -141,15 +128,15 @@ export default function App() {
     }
   }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName]);
 
-  // --- 改用整頁跳轉 (Redirect) 解決手機彈出視窗阻擋問題 ---
+  // --- 換回彈出視窗 (Popup) 來避開 Safari 跳轉清除記憶體的問題 ---
   const handleGoogleLogin = async () => {
     if (!auth) return;
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithRedirect(auth, provider);
+      await signInWithPopup(auth, provider);
     } catch (error) {
       console.error("Google 登入失敗:", error);
-      setAuthError(`Google 登入失敗：${error.message}`);
+      setAuthError(`彈出視窗被阻擋或登入失敗。請務必使用「手機原本的 Safari 或 Chrome」開啟網址，不要在 LINE 或 FB 裡面點開！`);
     }
   };
 
@@ -301,7 +288,7 @@ export default function App() {
         <h1 className="text-xl font-bold text-gray-800">答題批改 App</h1>
         
         {user && user.isAnonymous && (
-          <button onClick={handleGoogleLogin} className="text-xs bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-full hover:bg-blue-200 transition">
+          <button onClick={handleGoogleLogin} className="text-xs bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-full hover:bg-blue-200 transition shadow-sm">
             👉 登入跨裝置同步
           </button>
         )}
@@ -386,7 +373,7 @@ export default function App() {
           {authError && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex flex-col items-center text-center">
               <span className="text-3xl mb-2">⚠️</span>
-              <p className="font-bold mb-1">連線雲端發生問題</p>
+              <p className="font-bold mb-1">發生問題</p>
               <p className="text-sm">{authError}</p>
             </div>
           )}
