@@ -1,136 +1,212 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
-// 定義標註符號
+// --- Firebase 初始化區塊 ---
+// 為了讓你在本地端或 Vercel 也能順利儲存，請在此填寫你的 Firebase 設定檔。
+// 若在 Canvas 平台內執行，則會自動抓取系統提供的設定。
+const firebaseConfig = {
+  apiKey: "AIzaSyDbY2XXc-gd27XrngbEdkf2hnAFBkh5D4U",
+  authDomain: "my-auto-grader-1a658.firebaseapp.com",
+  projectId: "my-auto-grader-1a658",
+  storageBucket: "my-auto-grader-1a658.firebasestorage.app",
+  messagingSenderId: "966517075493",
+  appId: "1:966517075493:web:ad7deb77f0e7e1920659cc"
+};
+
+let app, auth, db;
+try {
+  const config = getFirebaseConfig();
+  if (config && config.apiKey) {
+    app = initializeApp(config);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } else {
+    console.warn("尚未設定 Firebase Config，本地端將無法使用雲端儲存功能。");
+  }
+} catch (e) {
+  console.error("Firebase 初始化失敗:", e);
+}
+
+const currentAppId = typeof __app_id !== 'undefined' ? __app_id : 'auto-grader-app';
+
+// 定義標註符號與選項
 const MARK_OPTIONS = [
   { id: 'circle', symbol: '⭕' },
   { id: 'cross', symbol: '❌' },
   { id: 'triangle', symbol: '🔺' },
   { id: 'question', symbol: '❓' }
 ];
-
-// 選項字母表
 const ALPHABET = ['A', 'B', 'C', 'D', 'E'];
 
 export default function App() {
+  // 帳號與雲端紀錄狀態
+  const [user, setUser] = useState(null);
+  const [records, setRecords] = useState([]);
+  const [setupTab, setSetupTab] = useState('new'); // 'new' 或 'history'
+  const [currentRecordId, setCurrentRecordId] = useState(null);
+  const [recordName, setRecordName] = useState('');
+  const [deleteModalId, setDeleteModalId] = useState(null);
+
   // 頁面狀態: 'setup', 'quiz', 'review', 'result'
   const [currentPage, setCurrentPage] = useState('setup');
 
   // 起始設定狀態
   const [totalQuestions, setTotalQuestions] = useState('');
-  const [optionCount, setOptionCount] = useState(4); // 預設 4 個選項
+  const [optionCount, setOptionCount] = useState(4);
   const [pointsPerQuestion, setPointsPerQuestion] = useState('');
-  const [gradingMode, setGradingMode] = useState('all-at-once'); // 'per-question' 或 'all-at-once'
+  const [gradingMode, setGradingMode] = useState('all-at-once');
   const [rawAnswers, setRawAnswers] = useState('');
-
-  // 處理後的正確解答陣列
   const [correctAnswers, setCorrectAnswers] = useState([]);
 
   // 作答狀態
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [userAnswers, setUserAnswers] = useState({}); // { 0: 'A', 1: 'C', ... }
-  const [marks, setMarks] = useState({}); // { 0: 'circle', 1: 'question', ... }
+  const [userAnswers, setUserAnswers] = useState({});
+  const [marks, setMarks] = useState({});
 
   // 錯誤提示與彈出視窗狀態
   const [setupError, setSetupError] = useState('');
   const [feedbackModal, setFeedbackModal] = useState({ isOpen: false, isCorrect: false, correctAnswer: '' });
   const [showMarksModal, setShowMarksModal] = useState(false);
 
-  // 解析正確答案 (只取英文字母並轉大寫)
-  const parseAnswers = (text) => {
-    return text.replace(/[^a-zA-Z]/g, '').toUpperCase().split('');
-  };
+  // --- Firebase 登入與資料抓取 ---
+  useEffect(() => {
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.error("登入錯誤:", e);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
 
-  // 開始作答驗證
+  useEffect(() => {
+    if (!db || !user) return;
+    const recordsRef = collection(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records');
+    const unsubscribe = onSnapshot(recordsRef, (snapshot) => {
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a, b) => b.updatedAt - a.updatedAt); // 依更新時間新到舊排序
+      setRecords(data);
+    }, (error) => {
+      console.error("抓取紀錄失敗:", error);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // --- 自動儲存機制 ---
+  useEffect(() => {
+    if (currentPage === 'quiz' && currentRecordId && db && user) {
+      const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
+      setDoc(docRef, {
+        recordName,
+        totalQuestions,
+        optionCount,
+        pointsPerQuestion,
+        gradingMode,
+        correctAnswers,
+        userAnswers,
+        marks,
+        currentQuestionIndex,
+        status: 'in-progress',
+        updatedAt: Date.now()
+      }, { merge: true }).catch(console.error);
+    }
+  }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName]);
+
+
+  // --- 核心邏輯 ---
+  const parseAnswers = (text) => text.replace(/[^a-zA-Z]/g, '').toUpperCase().split('');
+
   const handleStart = () => {
+    if (!recordName.trim()) {
+      setSetupError('請輸入本次作答紀錄名稱，以利後續查看進度。');
+      return;
+    }
     const qCount = parseInt(totalQuestions, 10);
     const pts = parseFloat(pointsPerQuestion);
     
-    if (!qCount || qCount <= 0) {
-      setSetupError('請輸入有效的總題數。');
-      return;
-    }
-    if (!pts || pts <= 0) {
-      setSetupError('請輸入有效的每題配分。');
-      return;
-    }
+    if (!qCount || qCount <= 0) { setSetupError('請輸入有效的總題數。'); return; }
+    if (!pts || pts <= 0) { setSetupError('請輸入有效的每題配分。'); return; }
 
     const parsedAnswers = parseAnswers(rawAnswers);
     if (parsedAnswers.length < qCount) {
-      setSetupError(`正確答案數量不足。您設定了 ${qCount} 題，但只偵測到 ${parsedAnswers.length} 個英文字母。`);
+      setSetupError(`正確答案數量不足。設定了 ${qCount} 題，但只偵測到 ${parsedAnswers.length} 個英文字母。`);
       return;
     }
 
-    // 檢查是否有選項以外的字母 (例如選項設定為 3 (A,B,C)，答案卻出現 D)
     const validLetters = ALPHABET.slice(0, optionCount);
     const invalidAnswerIndex = parsedAnswers.slice(0, qCount).findIndex(ans => !validLetters.includes(ans));
     if (invalidAnswerIndex !== -1) {
-      setSetupError(`偵測到無效答案 '${parsedAnswers[invalidAnswerIndex]}' 於第 ${invalidAnswerIndex + 1} 題。請確認答案字母是否符合您設定的選項數量（目前為 A 到 ${validLetters[validLetters.length - 1]}）。`);
+      setSetupError(`偵測到無效答案 '${parsedAnswers[invalidAnswerIndex]}' 於第 ${invalidAnswerIndex + 1} 題。請確認字母是否符合選項數量。`);
       return;
     }
 
     setSetupError('');
-    setCorrectAnswers(parsedAnswers.slice(0, qCount)); // 只取總題數的答案數量
+    setCorrectAnswers(parsedAnswers.slice(0, qCount));
     setUserAnswers({});
     setMarks({});
     setCurrentQuestionIndex(0);
+    
+    // 產生新的紀錄 ID
+    const newId = Date.now().toString();
+    setCurrentRecordId(newId);
     setCurrentPage('quiz');
   };
 
-  // 選擇答案
   const handleSelectAnswer = (option) => {
     setUserAnswers(prev => ({ ...prev, [currentQuestionIndex]: option }));
   };
 
-  // 選擇標註
   const handleToggleMark = (markId) => {
     setMarks(prev => {
       const newMarks = { ...prev };
-      if (newMarks[currentQuestionIndex] === markId) {
-        delete newMarks[currentQuestionIndex]; // 取消標註
-      } else {
-        newMarks[currentQuestionIndex] = markId;
-      }
+      if (newMarks[currentQuestionIndex] === markId) delete newMarks[currentQuestionIndex];
+      else newMarks[currentQuestionIndex] = markId;
       return newMarks;
     });
   };
 
-  // 下一題 / 作答完成
+  const proceedToNext = (isLast) => {
+    if (isLast) setCurrentPage('review');
+    else setCurrentQuestionIndex(prev => prev + 1);
+  };
+
   const handleNext = () => {
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
-    
-    // 如果是逐題批改且該題有作答，則顯示回饋
     if (gradingMode === 'per-question' && userAnswers[currentQuestionIndex]) {
       const isCorrect = userAnswers[currentQuestionIndex] === correctAnswers[currentQuestionIndex];
-      setFeedbackModal({
-        isOpen: true,
-        isCorrect: isCorrect,
-        correctAnswer: correctAnswers[currentQuestionIndex],
-        isLast: isLastQuestion
-      });
+      setFeedbackModal({ isOpen: true, isCorrect, correctAnswer: correctAnswers[currentQuestionIndex], isLast: isLastQuestion });
     } else {
-      // 若無逐題批改，直接跳轉
       proceedToNext(isLastQuestion);
     }
   };
 
-  const proceedToNext = (isLast) => {
-    if (isLast) {
-      setCurrentPage('review');
-    } else {
-      setCurrentQuestionIndex(prev => prev + 1);
-    }
-  };
-
-  // 關閉逐題批改的彈出視窗並進入下一題
   const handleCloseFeedback = () => {
     const isLast = feedbackModal.isLast;
     setFeedbackModal({ isOpen: false, isCorrect: false, correctAnswer: '' });
     proceedToNext(isLast);
   };
 
-  // 計算分數
+  const handleSubmit = () => {
+    // 交卷時將狀態改為已完成
+    if (db && user && currentRecordId) {
+      const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
+      setDoc(docRef, { status: 'completed', updatedAt: Date.now() }, { merge: true }).catch(console.error);
+    }
+    setCurrentPage('result');
+  };
+
   const resultData = useMemo(() => {
-    if (currentPage !== 'result') return null;
+    if (!correctAnswers || correctAnswers.length === 0) return null;
     let correctCount = 0;
     const details = correctAnswers.map((correctAns, index) => {
       const userAns = userAnswers[index];
@@ -138,218 +214,203 @@ export default function App() {
       if (isCorrect) correctCount++;
       return { questionNum: index + 1, userAns: userAns || '未作答', correctAns, isCorrect };
     });
-    
     return {
       score: correctCount * parseFloat(pointsPerQuestion),
       totalScore: correctAnswers.length * parseFloat(pointsPerQuestion),
       details
     };
-  }, [currentPage, correctAnswers, userAnswers, pointsPerQuestion]);
+  }, [correctAnswers, userAnswers, pointsPerQuestion]);
 
-  // 渲染：起始頁面
+  // --- 紀錄選單操作 ---
+  const handleResumeRecord = (record) => {
+    setRecordName(record.recordName || '');
+    setTotalQuestions(record.totalQuestions);
+    setOptionCount(record.optionCount);
+    setPointsPerQuestion(record.pointsPerQuestion);
+    setGradingMode(record.gradingMode);
+    setCorrectAnswers(record.correctAnswers);
+    setUserAnswers(record.userAnswers || {});
+    setMarks(record.marks || {});
+    setCurrentQuestionIndex(record.currentQuestionIndex || 0);
+    setCurrentRecordId(record.id);
+    setCurrentPage('quiz');
+  };
+
+  const handleViewResult = (record) => {
+    setRecordName(record.recordName || '');
+    setTotalQuestions(record.totalQuestions);
+    setOptionCount(record.optionCount);
+    setPointsPerQuestion(record.pointsPerQuestion);
+    setGradingMode(record.gradingMode);
+    setCorrectAnswers(record.correctAnswers);
+    setUserAnswers(record.userAnswers || {});
+    setMarks(record.marks || {});
+    setCurrentRecordId(record.id);
+    setCurrentPage('result');
+  };
+
+  const executeDelete = async () => {
+    if (!db || !user || !deleteModalId) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', deleteModalId));
+    } catch (e) { console.error("刪除失敗:", e); }
+    setDeleteModalId(null);
+  };
+
+
+  // --- 渲染各個頁面 ---
   const renderSetupPage = () => (
-    <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md p-6 space-y-6">
-      <h1 className="text-2xl font-bold text-center text-gray-800">答題自動批改 App</h1>
+    <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md p-6 flex flex-col h-[90vh]">
+      <h1 className="text-2xl font-bold text-center text-gray-800 mb-4">答題自動批改 App</h1>
       
+      {/* 標籤切換 */}
+      <div className="flex border-b mb-6 shrink-0">
+        <button onClick={() => setSetupTab('new')} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'new' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>📝 建立新測驗</button>
+        <button onClick={() => setSetupTab('history')} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'history' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>📂 作答紀錄</button>
+      </div>
+
       {setupError && (
-        <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm font-medium">
+        <div className="p-3 mb-4 bg-red-100 text-red-700 rounded-lg text-sm font-medium shrink-0">
           {setupError}
         </div>
       )}
 
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">總題數</label>
-          <input 
-            type="text" 
-            inputMode="numeric" 
-            pattern="[0-9]*"
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            placeholder="例如: 50"
-            value={totalQuestions}
-            onChange={(e) => setTotalQuestions(e.target.value.replace(/[^0-9]/g, ''))}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">選項數量</label>
-          <div className="grid grid-cols-3 gap-2">
-            {[3, 4, 5].map(num => (
-              <button
-                key={num}
-                className={`py-2 rounded-lg font-medium transition-colors ${
-                  optionCount === num 
-                    ? 'bg-blue-600 text-white shadow' 
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-                onClick={() => setOptionCount(num)}
-              >
-                {num} 個
-              </button>
-            ))}
+      {/* 建立新測驗區塊 */}
+      {setupTab === 'new' && (
+        <div className="space-y-4 overflow-y-auto pr-2 pb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">本次作答紀錄名稱</label>
+            <input 
+              type="text" 
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="例如: 第一次期中考練習"
+              value={recordName}
+              onChange={(e) => setRecordName(e.target.value)}
+            />
           </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">每題配分</label>
-          <input 
-            type="text" 
-            inputMode="numeric" 
-            pattern="[0-9.]*"
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            placeholder="例如: 2"
-            value={pointsPerQuestion}
-            onChange={(e) => setPointsPerQuestion(e.target.value.replace(/[^0-9.]/g, ''))}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">批改方式</label>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              className={`py-2 rounded-lg font-medium transition-colors ${
-                gradingMode === 'per-question' 
-                  ? 'bg-blue-600 text-white shadow' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-              onClick={() => setGradingMode('per-question')}
-            >
-              逐題批改
-            </button>
-            <button
-              className={`py-2 rounded-lg font-medium transition-colors ${
-                gradingMode === 'all-at-once' 
-                  ? 'bg-blue-600 text-white shadow' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-              onClick={() => setGradingMode('all-at-once')}
-            >
-              作答完一次批改
-            </button>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">總題數</label>
+            <input 
+              type="text" inputMode="numeric" pattern="[0-9]*"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="例如: 50" value={totalQuestions} onChange={(e) => setTotalQuestions(e.target.value.replace(/[^0-9]/g, ''))}
+            />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">選項數量</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[3, 4, 5].map(num => (
+                <button key={num} className={`py-2 rounded-lg font-medium transition ${optionCount === num ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setOptionCount(num)}>{num} 個</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">每題配分</label>
+            <input 
+              type="text" inputMode="numeric" pattern="[0-9.]*"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="例如: 2" value={pointsPerQuestion} onChange={(e) => setPointsPerQuestion(e.target.value.replace(/[^0-9.]/g, ''))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">批改方式</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button className={`py-2 rounded-lg font-medium transition ${gradingMode === 'per-question' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setGradingMode('per-question')}>逐題批改</button>
+              <button className={`py-2 rounded-lg font-medium transition ${gradingMode === 'all-at-once' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setGradingMode('all-at-once')}>作答完一次批改</button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">正確答案貼上區</label>
+            <textarea
+              className="w-full p-3 border border-gray-300 rounded-lg h-24 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+              placeholder="貼上文字即可，系統會自動擷取英文字母作為答案。例如: 1.A 2.B 3.C ..."
+              value={rawAnswers} onChange={(e) => setRawAnswers(e.target.value)}
+            />
+          </div>
+          <button onClick={handleStart} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition mt-2">開始作答</button>
         </div>
+      )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">正確答案貼上區</label>
-          <textarea
-            className="w-full p-3 border border-gray-300 rounded-lg h-24 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
-            placeholder="貼上文字即可，系統會自動擷取英文字母作為答案。例如: 1.A 2.B 3.C ..."
-            value={rawAnswers}
-            onChange={(e) => setRawAnswers(e.target.value)}
-          />
+      {/* 作答紀錄區塊 */}
+      {setupTab === 'history' && (
+        <div className="flex-1 overflow-y-auto pr-2 space-y-3 pb-4">
+          {!user && <div className="text-center text-gray-500 py-8">正在連線至雲端...</div>}
+          {user && records.length === 0 && <div className="text-center text-gray-500 py-8 border-2 border-dashed border-gray-200 rounded-xl">目前還沒有任何紀錄喔！</div>}
+          {records.map(record => (
+            <div key={record.id} className="p-4 border border-gray-200 rounded-xl bg-gray-50 shadow-sm flex flex-col space-y-3">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="font-bold text-gray-800 text-lg">{record.recordName || '未命名測驗'}</h3>
+                  <p className="text-xs text-gray-500">{new Date(record.updatedAt).toLocaleString()}</p>
+                </div>
+                <span className={`text-xs font-bold px-2 py-1 rounded ${record.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                  {record.status === 'completed' ? '已完成' : '作答中'}
+                </span>
+              </div>
+              <div className="flex justify-end space-x-2 border-t border-gray-200 pt-3">
+                {record.status === 'completed' ? (
+                  <button onClick={() => handleViewResult(record)} className="text-sm bg-gray-800 hover:bg-black text-white font-bold px-4 py-2 rounded-lg transition">查看結果</button>
+                ) : (
+                  <button onClick={() => handleResumeRecord(record)} className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg transition">繼續作答</button>
+                )}
+                <button onClick={() => setDeleteModalId(record.id)} className="text-sm bg-red-100 hover:bg-red-200 text-red-700 font-bold px-4 py-2 rounded-lg transition">刪除</button>
+              </div>
+            </div>
+          ))}
         </div>
-
-        <button 
-          onClick={handleStart}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-4 shadow transition-colors"
-        >
-          開始作答
-        </button>
-      </div>
+      )}
     </div>
   );
 
-  // 渲染：作答頁面
   const renderQuizPage = () => {
     const options = ALPHABET.slice(0, optionCount);
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
 
     return (
       <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md flex flex-col h-[90vh] overflow-hidden relative">
-        {/* Header - 題號選單與標註 */}
         <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <span className="font-medium text-gray-700">第</span>
-            <select 
-              value={currentQuestionIndex}
-              onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))}
-              className="p-1 border border-gray-300 rounded outline-none font-bold text-blue-600"
-            >
-              {correctAnswers.map((_, idx) => (
-                <option key={idx} value={idx}>{idx + 1}</option>
-              ))}
-            </select>
-            <span className="font-medium text-gray-700">題 / 共 {correctAnswers.length} 題</span>
+          <div className="flex flex-col">
+             <span className="text-xs font-bold text-blue-600 mb-1">{recordName} (自動儲存中)</span>
+             <div className="flex items-center space-x-2">
+               <span className="font-medium text-gray-700">第</span>
+               <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 border border-gray-300 rounded outline-none font-bold text-blue-600">
+                 {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
+               </select>
+               <span className="font-medium text-gray-700">題 / 共 {correctAnswers.length} 題</span>
+             </div>
           </div>
         </div>
 
-        {/* 標註區塊 */}
         <div className="p-4 flex justify-center space-x-4 border-b">
           {MARK_OPTIONS.map(mark => (
-            <button
-              key={mark.id}
-              onClick={() => handleToggleMark(mark.id)}
-              className={`text-2xl p-2 rounded-full transition-all ${
-                marks[currentQuestionIndex] === mark.id 
-                  ? 'bg-blue-100 scale-110 shadow-sm' 
-                  : 'bg-gray-50 hover:bg-gray-100 grayscale opacity-50 hover:grayscale-0 hover:opacity-100'
-              }`}
-            >
-              {mark.symbol}
-            </button>
+            <button key={mark.id} onClick={() => handleToggleMark(mark.id)} className={`text-2xl p-2 rounded-full transition ${marks[currentQuestionIndex] === mark.id ? 'bg-blue-100 scale-110 shadow-sm' : 'bg-gray-50 hover:bg-gray-100 grayscale opacity-50 hover:grayscale-0 hover:opacity-100'}`}>{mark.symbol}</button>
           ))}
         </div>
 
-        {/* 選項區塊 */}
         <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-gray-50/50">
           {options.map(opt => (
-            <button
-              key={opt}
-              onClick={() => handleSelectAnswer(opt)}
-              className={`w-full p-4 rounded-xl border-2 text-xl font-bold transition-all ${
-                userAnswers[currentQuestionIndex] === opt
-                  ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-gray-50'
-              }`}
-            >
-              {opt}
-            </button>
+            <button key={opt} onClick={() => handleSelectAnswer(opt)} className={`w-full p-4 rounded-xl border-2 text-xl font-bold transition ${userAnswers[currentQuestionIndex] === opt ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-gray-50'}`}>{opt}</button>
           ))}
         </div>
 
-        {/* 底部按鈕 */}
         <div className="p-4 border-t bg-white flex justify-between items-center">
-          <button 
-            onClick={() => setShowMarksModal(true)}
-            className="text-gray-600 font-medium hover:text-gray-800 px-3 py-2 rounded"
-          >
-            看標註題目
-          </button>
-          <button 
-            onClick={handleNext}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow transition-colors"
-          >
-            {isLastQuestion ? '作答完成' : '下一題'}
-          </button>
+          <button onClick={() => setShowMarksModal(true)} className="text-gray-600 font-medium hover:text-gray-800 px-3 py-2 rounded">看標註題目</button>
+          <button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow transition">{isLastQuestion ? '作答完成' : '下一題'}</button>
         </div>
 
-        {/* 逐題批改彈出視窗 */}
         {feedbackModal.isOpen && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full text-center space-y-4 animate-scale-in">
               {feedbackModal.isCorrect ? (
-                <div>
-                  <div className="text-5xl mb-2">✅</div>
-                  <h2 className="text-2xl font-bold text-green-600">答對了！</h2>
-                </div>
+                <div><div className="text-5xl mb-2">✅</div><h2 className="text-2xl font-bold text-green-600">答對了！</h2></div>
               ) : (
-                <div>
-                  <div className="text-5xl mb-2">❌</div>
-                  <h2 className="text-2xl font-bold text-red-600">答錯了</h2>
-                  <p className="text-gray-600 mt-2 text-lg">正確答案是：<span className="font-bold text-red-600">{feedbackModal.correctAnswer}</span></p>
-                </div>
+                <div><div className="text-5xl mb-2">❌</div><h2 className="text-2xl font-bold text-red-600">答錯了</h2><p className="text-gray-600 mt-2 text-lg">正確答案是：<span className="font-bold text-red-600">{feedbackModal.correctAnswer}</span></p></div>
               )}
-              <button 
-                onClick={handleCloseFeedback}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-4 shadow"
-              >
-                {feedbackModal.isLast ? '進入檢查頁面' : '繼續下一題'}
-              </button>
+              <button onClick={handleCloseFeedback} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-4 shadow">{feedbackModal.isLast ? '進入檢查頁面' : '繼續下一題'}</button>
             </div>
           </div>
         )}
 
-        {/* 標註列表彈出視窗 */}
         {showMarksModal && (
           <div className="absolute inset-0 bg-black/60 flex items-end justify-center z-40 transition-opacity">
             <div className="bg-white w-full max-h-[60%] rounded-t-2xl flex flex-col">
@@ -358,24 +419,12 @@ export default function App() {
                 <button onClick={() => setShowMarksModal(false)} className="text-gray-500 text-xl font-bold p-2">&times;</button>
               </div>
               <div className="p-4 flex-1 overflow-y-auto grid grid-cols-4 gap-3">
-                {Object.keys(marks).length === 0 ? (
-                  <p className="col-span-4 text-center text-gray-500 py-4">目前沒有任何標註</p>
-                ) : (
+                {Object.keys(marks).length === 0 ? <p className="col-span-4 text-center text-gray-500 py-4">目前沒有任何標註</p> : (
                   Object.entries(marks).map(([idxStr, markId]) => {
                     const qIdx = parseInt(idxStr, 10);
                     const markSymbol = MARK_OPTIONS.find(m => m.id === markId)?.symbol;
                     return (
-                      <button
-                        key={qIdx}
-                        onClick={() => {
-                          setCurrentQuestionIndex(qIdx);
-                          setShowMarksModal(false);
-                        }}
-                        className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex flex-col items-center justify-center hover:bg-blue-50 transition-colors"
-                      >
-                        <span className="text-sm text-gray-500 mb-1">第 {qIdx + 1} 題</span>
-                        <span className="text-xl">{markSymbol}</span>
-                      </button>
+                      <button key={qIdx} onClick={() => { setCurrentQuestionIndex(qIdx); setShowMarksModal(false); }} className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex flex-col items-center justify-center hover:bg-blue-50 transition"><span className="text-sm text-gray-500 mb-1">第 {qIdx + 1} 題</span><span className="text-xl">{markSymbol}</span></button>
                     );
                   })
                 )}
@@ -387,13 +436,12 @@ export default function App() {
     );
   };
 
-  // 渲染：檢查頁面
   const renderReviewPage = () => {
     return (
       <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md h-[90vh] flex flex-col overflow-hidden">
         <div className="p-4 border-b bg-gray-50 text-center">
           <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
-          <p className="text-sm text-gray-500 mt-1">請確認您的作答內容</p>
+          <p className="text-sm text-gray-500 mt-1">{recordName}</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
@@ -408,14 +456,11 @@ export default function App() {
             <tbody>
               {correctAnswers.map((_, idx) => {
                 const ans = userAnswers[idx];
-                const markId = marks[idx];
-                const markSymbol = markId ? MARK_OPTIONS.find(m => m.id === markId)?.symbol : '-';
+                const markSymbol = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx])?.symbol : '-';
                 return (
                   <tr key={idx} className={`border-b border-gray-100 ${!ans ? 'bg-red-50' : ''}`}>
                     <td className="py-3 font-medium text-gray-700">{idx + 1}</td>
-                    <td className={`py-3 font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>
-                      {ans || '未作答'}
-                    </td>
+                    <td className={`py-3 font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '未作答'}</td>
                     <td className="py-3 text-lg">{markSymbol}</td>
                   </tr>
                 );
@@ -425,33 +470,23 @@ export default function App() {
         </div>
 
         <div className="p-4 border-t bg-white flex justify-between space-x-3">
-          <button 
-            onClick={() => setCurrentPage('quiz')}
-            className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 rounded-lg transition-colors"
-          >
-            修改答案
-          </button>
-          <button 
-            onClick={() => setCurrentPage('result')}
-            className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow transition-colors"
-          >
-            交卷
-          </button>
+          <button onClick={() => setCurrentPage('quiz')} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 rounded-lg transition">修改答案</button>
+          <button onClick={handleSubmit} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow transition">交卷</button>
         </div>
       </div>
     );
   };
 
-  // 渲染：結果頁面
   const renderResultPage = () => {
     if (!resultData) return null;
     const { score, totalScore, details } = resultData;
 
     return (
       <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md h-[90vh] flex flex-col overflow-hidden">
-        <div className="p-6 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white">
-          <h2 className="text-xl font-medium opacity-90">批改結果</h2>
-          <div className="mt-2 flex items-baseline justify-center">
+        <div className="p-6 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative">
+           <h2 className="text-lg font-medium opacity-90">{recordName}</h2>
+           <p className="text-sm opacity-80 mb-2">批改結果</p>
+           <div className="flex items-baseline justify-center">
             <span className="text-5xl font-bold">{score}</span>
             <span className="text-xl ml-1 opacity-80">/ {totalScore} 分</span>
           </div>
@@ -459,48 +494,39 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {details.map(item => (
-            <div 
-              key={item.questionNum} 
-              className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${
-                item.isCorrect ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'
-              }`}
-            >
+            <div key={item.questionNum} className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${item.isCorrect ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
               <div className="flex items-center space-x-4">
                 <span className="font-bold text-gray-500 w-8">#{item.questionNum}</span>
                 <div>
                   <div className="text-xs text-gray-500 mb-1">您的答案</div>
-                  <div className={`font-bold text-lg ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>
-                    {item.userAns}
-                  </div>
+                  <div className={`font-bold text-lg ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</div>
                 </div>
               </div>
-              
               {!item.isCorrect && (
                 <div className="text-right pl-4 border-l border-red-200">
                   <div className="text-xs text-gray-500 mb-1">正確答案</div>
-                  <div className="font-bold text-lg text-green-600">
-                    {item.correctAns}
-                  </div>
+                  <div className="font-bold text-lg text-green-600">{item.correctAns}</div>
                 </div>
               )}
-              
-              {item.isCorrect && (
-                <div className="text-2xl text-green-500 px-4">✓</div>
-              )}
+              {item.isCorrect && <div className="text-2xl text-green-500 px-4">✓</div>}
             </div>
           ))}
         </div>
 
-        <div className="p-4 border-t bg-white">
+        <div className="p-4 border-t bg-white flex space-x-3">
+          <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-3 rounded-lg transition">回紀錄列表</button>
           <button 
             onClick={() => {
               setCurrentPage('setup');
+              setSetupTab('new');
               setRawAnswers('');
               setTotalQuestions('');
+              setRecordName('');
+              setCurrentRecordId(null);
             }}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition-colors"
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition"
           >
-            重新設定新測驗
+            建立新測驗
           </button>
         </div>
       </div>
@@ -508,21 +534,31 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans text-gray-900">
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans text-gray-900 relative">
       <style dangerouslySetInnerHTML={{__html: `
-        @keyframes scaleIn {
-          from { transform: scale(0.9); opacity: 0; }
-          to { transform: scale(1); opacity: 1; }
-        }
-        .animate-scale-in {
-          animation: scaleIn 0.2s ease-out forwards;
-        }
+        @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .animate-scale-in { animation: scaleIn 0.2s ease-out forwards; }
       `}} />
       
       {currentPage === 'setup' && renderSetupPage()}
       {currentPage === 'quiz' && renderQuizPage()}
       {currentPage === 'review' && renderReviewPage()}
       {currentPage === 'result' && renderResultPage()}
+
+      {/* 刪除確認的彈出視窗 */}
+      {deleteModalId && (
+        <div className="absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full text-center space-y-4 animate-scale-in">
+            <div className="text-5xl mb-2">⚠️</div>
+            <h2 className="text-2xl font-bold text-gray-800">確定要刪除？</h2>
+            <p className="text-gray-600">刪除後將無法復原此筆作答紀錄。</p>
+            <div className="flex space-x-3 mt-4">
+              <button onClick={() => setDeleteModalId(null)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 rounded-lg transition">取消</button>
+              <button onClick={executeDelete} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition">確定刪除</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
