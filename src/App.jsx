@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+// 這裡新增了 GoogleAuthProvider, signInWithPopup, signOut 來處理 Google 登入
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
 // --- Firebase 初始化區塊 ---
@@ -124,6 +125,29 @@ export default function App() {
       }, { merge: true }).catch(console.error);
     }
   }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName]);
+
+  // --- 新增：處理 Google 登入與登出 ---
+  const handleGoogleLogin = async () => {
+    if (!auth) return;
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Google 登入失敗:", error);
+      // 有些瀏覽器會阻擋彈出視窗，會顯示在這裡
+      setAuthError(`Google 登入失敗：${error.message}`);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!auth) return;
+    try {
+      await signOut(auth);
+      window.location.reload(); // 登出後重新載入網頁，會自動變回無名氏
+    } catch (error) {
+      console.error("登出失敗:", error);
+    }
+  };
 
   const parseAnswers = (text) => text.replace(/[^a-zA-Z]/g, '').toUpperCase().split('');
 
@@ -258,7 +282,25 @@ export default function App() {
 
   const renderSetupPage = () => (
     <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-md p-6 flex flex-col h-[90vh]">
-      <h1 className="text-2xl font-bold text-center text-gray-800 mb-4">答題自動批改 App</h1>
+      
+      {/* 標題與登入區塊 */}
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-xl font-bold text-gray-800">答題批改 App</h1>
+        
+        {user && user.isAnonymous && (
+          <button onClick={handleGoogleLogin} className="text-xs bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-full hover:bg-blue-200 transition">
+            👉 登入跨裝置同步
+          </button>
+        )}
+        {user && !user.isAnonymous && (
+          <div className="flex items-center space-x-2">
+            <span className="text-xs text-gray-500 truncate max-w-[120px]">{user.email}</span>
+            <button onClick={handleLogout} className="text-xs bg-gray-200 text-gray-700 font-bold px-3 py-1.5 rounded-full hover:bg-gray-300 transition">
+              登出
+            </button>
+          </div>
+        )}
+      </div>
       
       <div className="flex border-b mb-6 shrink-0">
         <button onClick={() => setSetupTab('new')} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'new' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>📝 建立新測驗</button>
@@ -555,7 +597,6 @@ export default function App() {
             <div key={item.questionNum} className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${item.isCorrect ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
               <div className="flex items-center space-x-3">
                 <span className="font-bold text-gray-500 w-8">#{item.questionNum}</span>
-                {/* 新增顯示該題的標註圖示 */}
                 <div className="w-6 text-center shrink-0">
                   {item.markOpt && (
                     <span className={`text-xl font-bold ${item.markOpt.colorClass}`}>{item.markOpt.symbol}</span>
