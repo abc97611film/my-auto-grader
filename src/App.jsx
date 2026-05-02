@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
+// 更新：引入支援離線快取的 initializeFirestore 等模組
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
 // --- Firebase 初始化區塊 ---
 const getFirebaseConfig = () => {
@@ -24,7 +25,10 @@ try {
   if (config && config.apiKey) {
     app = initializeApp(config);
     auth = getAuth(app);
-    db = getFirestore(app);
+    // 開啟 Firebase 離線快取功能！
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+    });
   } else {
     console.warn("尚未設定 Firebase Config，本地端將無法使用雲端儲存功能。");
   }
@@ -453,14 +457,13 @@ export default function App() {
     </div>
   );
 
-  // --- UI 元件：作答頁面 ---
   const renderQuizPage = () => {
     const options = ALPHABET.slice(0, optionCount);
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
 
     return (
       <>
-        {/* --- 電腦版 UI (維持直式) --- */}
+        {/* --- 電腦版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
@@ -512,7 +515,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- 手機版 UI (橫式) --- */}
+        {/* --- 手機版 UI --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="font-bold text-black text-sm flex items-center">
@@ -593,11 +596,10 @@ export default function App() {
     );
   };
 
-  // --- UI 元件：作答檢查頁面 ---
   const renderReviewPage = () => {
     return (
       <>
-        {/* --- 電腦版 UI (維持垂直表格) --- */}
+        {/* --- 電腦版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 text-center shrink-0">
             <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
@@ -635,7 +637,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- 手機版 UI (自動高度 + 橫向捲軸卡片) --- */}
+        {/* --- 手機版 UI --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
@@ -666,14 +668,13 @@ export default function App() {
     );
   };
 
-  // --- UI 元件：批改結果頁面 ---
   const renderResultPage = () => {
     if (!resultData) return null;
     const { score, totalScore, details } = resultData;
 
     return (
       <>
-        {/* --- 電腦版 UI (維持垂直列表) --- */}
+        {/* --- 電腦版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative shrink-0">
              <h2 className="text-lg font-medium opacity-90 truncate">{recordName}</h2>
@@ -727,7 +728,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- 手機版 UI (自動高度 + 橫向捲軸卡片 + 修復裝飾定位) --- */}
+        {/* --- 手機版 UI --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
              <div className="flex flex-col flex-1 min-w-0 pr-2">
@@ -753,7 +754,6 @@ export default function App() {
           <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {details.map(item => (
               <div key={item.questionNum} className={`relative overflow-hidden flex flex-col items-center justify-center w-[100px] h-28 shrink-0 rounded-xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                {/* 這裡加了 relative 和 overflow-hidden 解決右下角浮水印跑版問題 */}
                 <div className="flex w-full px-2 justify-between items-center mb-1 z-10">
                   <span className="text-xs font-bold text-gray-500">#{item.questionNum}</span>
                   <span className={`text-xs font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
@@ -794,7 +794,6 @@ export default function App() {
       {currentPage !== 'setup' && (
         <>
           {/* 左側 / 上方：PDF 瀏覽區 */}
-          {/* flex-1 讓 PDF 自動填滿所有剩下的空間 */}
           <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
             {pdfUrl ? (
               <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
@@ -812,7 +811,6 @@ export default function App() {
           </div>
 
           {/* 右側 / 下方：App 介面區 */}
-          {/* 拿掉硬綁定的 h-[30dvh]，改成 h-auto 讓它自動貼合裡面的卡片高度。並加上安全邊界避免卡到 iPhone 底線 */}
           <div 
             className="shrink-0 h-auto max-h-[50dvh] w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
             style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
