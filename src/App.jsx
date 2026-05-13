@@ -851,37 +851,40 @@ export default function App() {
             </div>
           </div>
           
-          <div className="w-full flex flex-row items-center justify-between px-1.5 py-1.5 bg-[#F8F9FA] shrink-0 border-t border-gray-200 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+          <div className="w-full flex flex-row items-center justify-between px-2 py-2 bg-[#F8F9FA] shrink-0 border-t border-gray-200 overflow-x-auto [&::-webkit-scrollbar]:hidden" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}>
             
-            {/* 左側：看標註、Ｏ、Ｘ、△、？ 靠左 */}
-            <div className="shrink-0 flex flex-row items-center justify-start gap-2">
-              <button onClick={() => setShowMarksModal(true)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold py-1.5 px-2 rounded-md shadow-sm active:scale-95 transition-transform shrink-0">
+            {/* 左側：看標註 + Ｏ Ｘ △ ？ (靠左) */}
+            <div className="flex-1 flex flex-row items-center justify-start gap-2 shrink-0">
+              <button onClick={() => setShowMarksModal(true)} className="w-[85px] h-[60px] flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-xl shadow-sm active:scale-95 transition-transform text-[15px] shrink-0">
                 看標註
               </button>
-              {MARK_OPTIONS.map(mark => (
-                <button 
-                  key={mark.id} 
-                  onClick={() => handleToggleMark(mark.id)} 
-                  className={`text-[24px] leading-none font-bold transition-all active:scale-90 bg-transparent border-none shrink-0 ${
-                    marks[currentQuestionIndex] === mark.id 
-                    ? 'scale-125 drop-shadow-md opacity-100 ' + mark.colorClass 
-                    : 'opacity-40 grayscale hover:opacity-100 hover:grayscale-0 ' + mark.colorClass
-                  }`}
-                >
-                  {mark.symbol}
-                </button>
-              ))}
+              
+              <div className="flex flex-row items-center gap-1.5 shrink-0">
+                {MARK_OPTIONS.map(mark => (
+                  <button 
+                    key={mark.id} 
+                    onClick={() => handleToggleMark(mark.id)} 
+                    className={`w-[32px] h-[40px] flex items-center justify-center text-[26px] leading-none font-bold transition-all active:scale-90 bg-transparent border-none shrink-0 ${
+                      marks[currentQuestionIndex] === mark.id 
+                      ? 'scale-125 drop-shadow-md opacity-100 ' + mark.colorClass 
+                      : 'opacity-40 grayscale hover:opacity-100 hover:grayscale-0 ' + mark.colorClass
+                    }`}
+                  >
+                    {mark.symbol}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* 中間：選項置中 */}
-            <div className="flex-1 flex flex-row items-center justify-center gap-1.5 px-2 shrink-0">
+            {/* 中間：選項 (置中) */}
+            <div className="shrink-0 flex flex-row items-center justify-center gap-1.5 px-3">
               {options.map(opt => (
                 <button 
                   key={opt} 
                   onClick={() => handleSelectAnswer(opt)} 
-                  className={`max-w-[60px] flex-1 h-[80px] rounded-xl text-3xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
+                  className={`w-[45px] h-[60px] sm:w-[50px] sm:h-[65px] rounded-xl text-2xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
                     userAnswers[currentQuestionIndex] === opt 
-                    ? 'bg-[#3B82F6] text-white border-none' 
+                    ? 'bg-[#3B82F6] text-white border-none scale-105' 
                     : 'bg-white text-gray-700 border-2 border-gray-200'
                   }`}
                 >
@@ -890,12 +893,13 @@ export default function App() {
               ))}
             </div>
 
-            {/* 右側：交卷靠右 */}
-            <div className="shrink-0 flex items-center justify-end">
-              <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold h-[80px] px-4 rounded-xl shadow-sm transition whitespace-nowrap text-base active:scale-95">
+            {/* 右側：交卷/下一題 (靠右) */}
+            <div className="flex-1 flex flex-row items-center justify-end shrink-0">
+              <button onClick={handleNext} className="w-[85px] h-[60px] flex items-center justify-center bg-[#3B82F6] hover:bg-blue-600 text-white font-bold rounded-xl shadow-sm transition-transform active:scale-95 text-[15px] shrink-0">
                 {isLastQuestion ? '交卷' : '下一題'}
               </button>
             </div>
+
           </div>
         </div>
       </>
