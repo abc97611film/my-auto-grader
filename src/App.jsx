@@ -234,11 +234,10 @@ export default function App() {
     timerRef.current = { timeSpent: 0, timeRemaining: 0 };
   };
 
-  // 改寫為 FileReader (Base64) 模式
+  // 讀取 PDF 轉換為 Base64
   const handlePdfUpload = (e) => {
     const file = e.target.files[0];
     if (file && file.type === 'application/pdf') {
-      // Firestore 單筆資料限制 1MB，Base64 膨脹後會變大，限制原始檔案在 700KB 內
       if (file.size > 700 * 1024) {
         setSetupError('為配合免費資料庫限制，PDF 檔案大小不能超過 700KB。請先壓縮考卷檔案。');
         return;
@@ -249,7 +248,7 @@ export default function App() {
 
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPdfUrl(reader.result); // 將 PDF 轉為 Base64 字串直接存入狀態
+        setPdfUrl(reader.result); 
         setIsUploadingPdf(false);
       };
       reader.onerror = () => {
@@ -286,21 +285,20 @@ export default function App() {
       return;
     }
 
+    // 【修正：讓使用者在修改紀錄時也能套用新的倒計時設定】
     if (timerMode === 'down') {
       const limit = parseInt(timeLimit, 10);
       if (!limit || limit <= 0) {
         setSetupError('請輸入有效的倒計時時限（分鐘）。');
         return;
       }
-      if (!currentRecordId) {
-        setTimeRemaining(limit * 60);
-        timerRef.current.timeRemaining = limit * 60;
-      }
+      // 新的剩餘時間 = (總時限秒數) - (已經作答消耗的秒數)
+      const newRemaining = Math.max(0, (limit * 60) - timeSpent);
+      setTimeRemaining(newRemaining);
+      timerRef.current.timeRemaining = newRemaining;
     } else {
-      if (!currentRecordId) {
-        setTimeRemaining(0);
-        timerRef.current.timeRemaining = 0;
-      }
+      setTimeRemaining(0);
+      timerRef.current.timeRemaining = 0;
     }
 
     if (!currentRecordId) {
