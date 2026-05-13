@@ -816,13 +816,13 @@ export default function App() {
 
         {/* --- 手機版 UI --- */}
         <div className="flex lg:hidden w-full flex-col bg-white">
-          <div className="px-3 py-1.5 flex justify-between items-center shrink-0 border-b border-gray-200 bg-gray-50">
-            <div className="font-bold text-black text-sm flex items-center">
+          <div className="px-3 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-gray-50">
+            <div className="font-bold text-gray-800 text-sm flex items-center">
               <span>第</span>
               <select 
                 value={currentQuestionIndex} 
                 onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} 
-                className="mx-1 p-0 bg-transparent outline-none text-black font-bold appearance-none underline decoration-gray-400 text-center text-lg"
+                className="mx-1 p-0 bg-transparent outline-none text-blue-600 font-extrabold appearance-none underline decoration-gray-300 text-center text-lg"
               >
                 {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
               </select>
@@ -831,11 +831,11 @@ export default function App() {
 
             <div className="flex items-center gap-3">
               {timerMode !== 'none' && (
-                <div className="flex flex-row items-center gap-2 mr-3 border-r border-gray-300 pr-3">
-                  <span className={`font-mono font-bold text-sm sm:text-base ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>
+                <div className="flex items-center gap-2 mr-2 border-r border-gray-300 pr-3">
+                  <span className={`font-mono font-bold text-lg ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>
                     {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
                   </span>
-                  <button onClick={() => setIsPaused(true)} className="bg-gray-200 hover:bg-gray-300 text-blue-700 px-2 py-1 rounded-md text-[11px] font-bold active:scale-95 transition-transform shadow-sm">⏸ 暫停</button>
+                  <button onClick={() => setIsPaused(true)} className="bg-gray-200 hover:bg-gray-300 text-blue-700 px-3 py-1.5 rounded-md font-bold text-sm active:scale-95 transition-transform shadow-sm">⏸ 暫停</button>
                 </div>
               )}
               <button 
@@ -851,18 +851,19 @@ export default function App() {
             </div>
           </div>
           
-          <div className="w-full h-[65px] flex flex-row items-center justify-between px-1.5 bg-[#F8F9FA] shrink-0 border-t border-gray-200 overflow-hidden">
+          <div className="w-full h-[65px] flex flex-row items-center px-1.5 bg-[#F8F9FA] shrink-0 border-t border-gray-200 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             
-            {/* 左側：看標註、Ｏ、Ｘ、△、？ 靠左 */}
-            <div className="flex-1 basis-0 min-w-0 flex flex-row items-center justify-start gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-              <button onClick={() => setShowMarksModal(true)} className="w-[85px] h-[48px] px-2 flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 text-[11px] font-bold rounded-lg shadow-sm active:scale-95 transition-transform shrink-0 whitespace-nowrap">
+            {/* 左側：看標註 + Ｏ Ｘ △ ？ (靠左) */}
+            <div className="flex-1 min-w-max flex flex-row items-center justify-start gap-1 shrink-0 pr-2">
+              <button onClick={() => setShowMarksModal(true)} className="w-[85px] h-[50px] flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-xl shadow-sm active:scale-95 transition-transform text-[15px] shrink-0 whitespace-nowrap">
                 看標註
               </button>
+              
               {MARK_OPTIONS.map(mark => (
                 <button 
                   key={mark.id} 
                   onClick={() => handleToggleMark(mark.id)} 
-                  className={`w-[26px] h-[48px] flex items-center justify-center text-[20px] leading-none font-bold transition-all active:scale-90 bg-transparent border-none shrink-0 ${
+                  className={`w-[26px] h-[50px] flex items-center justify-center text-[20px] leading-none font-bold transition-all active:scale-90 bg-transparent border-none shrink-0 ${
                     marks[currentQuestionIndex] === mark.id 
                     ? 'scale-125 drop-shadow-md opacity-100 ' + mark.colorClass 
                     : 'opacity-40 grayscale hover:opacity-100 hover:grayscale-0 ' + mark.colorClass
@@ -879,7 +880,7 @@ export default function App() {
                 <button 
                   key={opt} 
                   onClick={() => handleSelectAnswer(opt)} 
-                  className={`w-[38px] h-[50px] rounded-xl text-xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
+                  className={`w-[76px] h-[50px] rounded-xl text-xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
                     userAnswers[currentQuestionIndex] === opt 
                     ? 'bg-[#3B82F6] text-white border-none scale-105' 
                     : 'bg-white text-gray-700 border-2 border-gray-200'
@@ -891,8 +892,8 @@ export default function App() {
             </div>
 
             {/* 右側：交卷靠右 */}
-            <div className="flex-1 basis-0 min-w-0 flex flex-row items-center justify-end overflow-x-auto [&::-webkit-scrollbar]:hidden">
-              <button onClick={handleNext} className="w-[85px] h-[48px] px-3 flex items-center justify-center bg-[#3B82F6] hover:bg-blue-600 text-white font-bold rounded-lg shadow-sm transition-transform active:scale-95 text-[12px] whitespace-nowrap shrink-0">
+            <div className="flex-1 min-w-max flex flex-row items-center justify-end shrink-0 pl-2">
+              <button onClick={handleNext} className="w-[85px] h-[50px] flex items-center justify-center bg-[#3B82F6] hover:bg-blue-600 text-white font-bold rounded-xl shadow-sm transition-transform active:scale-95 text-[15px] shrink-0 whitespace-nowrap">
                 {isLastQuestion ? '交卷' : '下一題'}
               </button>
             </div>
@@ -963,11 +964,11 @@ export default function App() {
             </div>
             <div className="flex gap-2 shrink-0 items-center">
               {timerMode !== 'none' && (
-                <div className="flex flex-row items-center gap-2 mr-1 border-r border-gray-200 pr-2">
-                  <span className={`font-mono font-bold text-sm sm:text-base ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                <div className="flex flex-col items-end mr-1 border-r border-gray-200 pr-2">
+                  <span className={`font-mono font-bold text-xs ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
                     {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
                   </span>
-                  <button onClick={() => setIsPaused(true)} className="bg-gray-200 hover:bg-gray-300 text-blue-700 px-2 py-1 rounded-md text-[11px] font-bold active:scale-95 transition-transform shadow-sm">⏸ 暫停</button>
+                  <button onClick={() => setIsPaused(true)} className="text-[10px] text-blue-600 font-bold">⏸ 暫停</button>
                 </div>
               )}
               <button onClick={() => setCurrentPage('quiz')} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-3 py-1.5 rounded transition text-xs">修改</button>
@@ -975,15 +976,17 @@ export default function App() {
             </div>
           </div>
 
-          <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+          <div className="w-full h-[65px] flex flex-row items-center px-2 gap-2 bg-[#F8F9FA] shrink-0 border-t border-gray-200 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             {correctAnswers.map((_, idx) => {
               const ans = userAnswers[idx];
               const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
               return (
-                <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-20 h-24 shrink-0 rounded-xl border shadow-sm cursor-pointer ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
-                  <span className="text-xs text-gray-500 mb-1">第 {idx + 1} 題</span>
-                  <span className={`text-2xl font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '無'}</span>
-                  <span className={`text-sm mt-1 font-bold ${markOpt?.colorClass || 'text-transparent'}`}>{markOpt ? markOpt.symbol : ' '}</span>
+                <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-[76px] h-[50px] shrink-0 rounded-xl border shadow-sm cursor-pointer ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
+                  <div className="flex w-full px-1.5 justify-between items-center mb-0.5">
+                    <span className="text-[10px] text-gray-500 font-bold">#{idx + 1}</span>
+                    <span className={`text-[11px] font-bold ${markOpt?.colorClass || 'text-transparent'}`}>{markOpt ? markOpt.symbol : ' '}</span>
+                  </div>
+                  <span className={`text-[18px] leading-none font-extrabold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '-'}</span>
                 </div>
               );
             })}
@@ -1072,26 +1075,19 @@ export default function App() {
              </div>
           </div>
 
-          <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+          <div className="w-full h-[65px] flex flex-row items-center px-2 gap-2 bg-[#F8F9FA] shrink-0 border-t border-gray-200 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             {details.map(item => (
-              <div key={item.questionNum} className={`relative overflow-hidden flex flex-col items-center justify-center w-[100px] h-28 shrink-0 rounded-xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <div className="flex w-full px-2 justify-between items-center mb-1 z-10">
-                  <span className="text-xs font-bold text-gray-500">#{item.questionNum}</span>
-                  <span className={`text-xs font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
+              <div key={item.questionNum} className={`flex flex-col items-center justify-center w-[85px] h-[50px] shrink-0 rounded-xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <div className="flex w-full px-1.5 justify-between items-center mb-0.5">
+                  <span className="text-[10px] text-gray-500 font-bold">#{item.questionNum}</span>
+                  <span className={`text-[11px] font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
                 </div>
-                
-                <div className="flex items-center justify-center gap-2 mt-1 z-10">
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] text-gray-400">你答</span>
-                    <span className={`text-xl font-bold ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</span>
-                  </div>
+                <div className="flex items-center justify-center gap-1 text-[16px] leading-none font-extrabold">
+                  <span className={item.isCorrect ? 'text-green-700' : 'text-red-600'}>{item.userAns}</span>
                   {!item.isCorrect && (
                     <>
-                      <span className="text-gray-300 text-xs">|</span>
-                      <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-gray-400">正確</span>
-                        <span className="text-xl font-bold text-green-600">{item.correctAns}</span>
-                      </div>
+                      <span className="text-gray-300 text-[10px] mx-0.5">|</span>
+                      <span className="text-green-600">{item.correctAns}</span>
                     </>
                   )}
                 </div>
