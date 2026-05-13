@@ -59,7 +59,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [pdfUrl, setPdfUrl] = useState(null);
-  const [pdfViewerUrl, setPdfViewerUrl] = useState(null); // 存放自訂 PDF 渲染器的 Blob URL
+  const [pdfViewerUrl, setPdfViewerUrl] = useState(null); 
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -70,7 +70,6 @@ export default function App() {
   const [rawAnswers, setRawAnswers] = useState('');
   const [correctAnswers, setCorrectAnswers] = useState([]);
 
-  // 計時器相關狀態
   const [timerMode, setTimerMode] = useState('none'); 
   const [timeLimit, setTimeLimit] = useState(''); 
   const [timeSpent, setTimeSpent] = useState(0); 
@@ -123,12 +122,10 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // 更新 timerRef，供獨立存檔使用以避免過度寫入
   useEffect(() => {
     timerRef.current = { timeSpent, timeRemaining };
   }, [timeSpent, timeRemaining]);
 
-  // 計時器邏輯
   useEffect(() => {
     let interval = null;
     if ((currentPage === 'quiz' || currentPage === 'review') && !isPaused && timerMode !== 'none') {
@@ -142,7 +139,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [currentPage, isPaused, timerMode]);
 
-  // 倒計時自動交卷機制
   useEffect(() => {
     if (timerMode === 'down' && timeRemaining === 0 && (currentPage === 'quiz' || currentPage === 'review') && !isPaused) {
       if (db && user && currentRecordId) {
@@ -153,7 +149,6 @@ export default function App() {
     }
   }, [timeRemaining, timerMode, currentPage, isPaused, db, user, currentRecordId]);
 
-  // 主要作答進度存檔 (包含 Base64 PDF 字串)
   useEffect(() => {
     if ((currentPage === 'quiz' || currentPage === 'review') && currentRecordId && db && user) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
@@ -178,7 +173,6 @@ export default function App() {
     }
   }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName, timerMode, timeLimit, pdfUrl]);
 
-  // 每 10 秒儲存一次時間狀態
   useEffect(() => {
     let interval = null;
     if ((currentPage === 'quiz' || currentPage === 'review') && currentRecordId && db && user) {
@@ -194,7 +188,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [currentPage, currentRecordId, db, user]);
 
-  // 【核心功能】將 Base64 PDF 轉換為內嵌的 PDF.js 閱讀器 HTML Blob
+  // 【優化】強制電腦版與手機版皆以「最寬寬度」顯示 PDF
   useEffect(() => {
     if (!pdfUrl) {
       setPdfViewerUrl(null);
@@ -210,8 +204,9 @@ export default function App() {
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0">
           <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
           <style>
-            body { margin: 0; padding: 10px 0; background: #374151; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
-            .page-container { margin-bottom: 12px; width: 96%; max-width: 800px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); background: white; border-radius: 4px; overflow: hidden; }
+            body { margin: 0; padding: 0; background: #374151; display: flex; flex-direction: column; align-items: center; min-height: 100vh; overflow-x: hidden; }
+            /* 取消所有的 max-width 限制，強制寬度為 100% 填滿視窗 */
+            .page-container { margin-bottom: 8px; width: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.5); background: white; }
             canvas { width: 100% !important; height: auto !important; display: block; }
             #loading { color: #D1D5DB; margin-top: 40px; font-family: sans-serif; font-size: 15px; font-weight: bold; text-align: center; line-height: 1.5; }
             .spinner { margin: 10px auto; width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s ease-in-out infinite; }
@@ -221,7 +216,7 @@ export default function App() {
         <body>
           <div id="loading">
             <div class="spinner"></div>
-            處理 PDF 中...<br><span style="font-size: 12px; font-weight: normal; opacity: 0.8">這可能會需要幾秒鐘</span>
+            處理 PDF 中...<br><span style="font-size: 12px; font-weight: normal; opacity: 0.8">這可能會花費幾秒鐘</span>
           </div>
           <div id="container" style="width: 100%; display: flex; flex-direction: column; align-items: center;"></div>
           <script>
@@ -240,10 +235,11 @@ export default function App() {
                 for(let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                   const wrapper = document.createElement('div');
                   wrapper.className = 'page-container';
-                  container.appendChild(wrapper); // 依序建立每一頁的佔位容器
+                  container.appendChild(wrapper);
 
                   pdf.getPage(pageNum).then(page => {
-                    const viewport = page.getViewport({scale: 2.0}); // 放大倍率確保手機上文字清晰
+                    // 使用更高的解析度倍率 (2.5)，確保在 100% 寬度下文字依然銳利
+                    const viewport = page.getViewport({scale: 2.5}); 
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     canvas.height = viewport.height;
@@ -320,7 +316,6 @@ export default function App() {
         setSetupError('為配合免費資料庫限制，PDF 檔案大小不能超過 700KB。請先壓縮考卷檔案。');
         return;
       }
-
       setIsUploadingPdf(true);
       setSetupError('');
 
@@ -573,7 +568,7 @@ export default function App() {
           </div>
           
           <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 檔</label>
+            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 綁定紀錄 (免開 Storage 版)</label>
             <input 
               type="file" 
               accept="application/pdf"
@@ -582,7 +577,7 @@ export default function App() {
               className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer disabled:opacity-50"
             />
             {isUploadingPdf && <span className="text-xs text-blue-600 mt-2 block font-bold animate-pulse">⏳ PDF 轉換中... 請稍候</span>}
-            {!isUploadingPdf && pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 已成功上傳</span>}
+            {!isUploadingPdf && pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 已成功轉換並綁定</span>}
           </div>
 
           <div>
@@ -812,15 +807,15 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- 手機版 UI --- */}
+        {/* --- 手機版 UI (針對 iPhone 15 Pro 高屏占比優化) --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
-          <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
-            <div className="font-bold text-black text-sm flex items-center">
+          <div className="px-4 py-3 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white shadow-sm z-10">
+            <div className="font-bold text-black text-[15px] flex items-center">
               <span>第</span>
               <select 
                 value={currentQuestionIndex} 
                 onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} 
-                className="mx-1 p-0 bg-transparent outline-none text-black font-bold appearance-none underline decoration-gray-400 text-center"
+                className="mx-1 p-0 bg-transparent outline-none text-blue-600 font-extrabold appearance-none underline decoration-gray-300 text-center"
               >
                 {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
               </select>
@@ -829,19 +824,19 @@ export default function App() {
 
             <div className="flex items-center">
               {timerMode !== 'none' && (
-                <div className="flex flex-col items-end mr-3 border-r border-gray-200 pr-3">
-                  <span className={`font-mono font-bold text-sm ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                <div className="flex flex-col items-end mr-4 border-r border-gray-200 pr-4">
+                  <span className={`font-mono font-bold text-[15px] ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>
                     {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
                   </span>
-                  <button onClick={() => setIsPaused(true)} className="text-[10px] text-blue-600 font-bold mt-0.5">⏸ 暫停</button>
+                  <button onClick={() => setIsPaused(true)} className="text-[11px] text-blue-600 font-bold mt-1 active:scale-95 transition-transform">⏸ 暫停</button>
                 </div>
               )}
               <button 
                 onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
-                className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
+                className="flex items-center justify-center w-9 h-9 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-all shrink-0 active:scale-90"
                 title="回首頁"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                   <polyline points="9 22 9 12 15 12 15 22"></polyline>
                 </svg>
@@ -849,7 +844,8 @@ export default function App() {
             </div>
           </div>
           
-          <div className="w-full flex flex-row items-center px-2 py-3 gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+          {/* 優化：加長高度、拉開按鈕間距，確保 19.5:9 比例的 iPhone 15 Pro 下方看起來平衡 */}
+          <div className="w-full flex flex-row items-center px-3 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             <div className="flex flex-col gap-2 shrink-0">
               <div className="relative">
                 <select
@@ -863,29 +859,29 @@ export default function App() {
                       return newMarks;
                     });
                   }}
-                  className="appearance-none bg-[#E5E7EB] border-none text-gray-700 py-1.5 pl-2 pr-6 rounded-md text-xs font-bold outline-none w-[80px]"
+                  className="appearance-none bg-[#E5E7EB] border-none text-gray-800 py-2 pl-3 pr-7 rounded-xl text-xs font-bold outline-none w-[90px] shadow-sm"
                 >
                   <option value="">標註選單</option>
                   {MARK_OPTIONS.map(m => <option key={m.id} value={m.id}>{m.symbol}</option>)}
                 </select>
-                <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center px-1 text-gray-500">
-                  <svg className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center px-1 text-gray-500">
+                  <svg className="fill-current h-4 w-4" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
                 </div>
               </div>
-              <button onClick={() => setShowMarksModal(true)} className="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-1.5 px-2 rounded-md shadow-sm transition">
+              <button onClick={() => setShowMarksModal(true)} className="bg-gray-700 hover:bg-gray-800 text-white text-xs font-bold py-2 px-2 rounded-xl shadow-sm transition active:scale-95">
                 看標註
               </button>
             </div>
 
-            <div className="flex-1 flex flex-row items-center justify-center gap-2 px-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            <div className="flex-1 flex flex-row items-center justify-center gap-2 md:gap-3 px-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
               {options.map(opt => (
                 <button 
                   key={opt} 
                   onClick={() => handleSelectAnswer(opt)} 
-                  className={`w-[45px] h-[55px] rounded-lg text-2xl font-bold flex items-center justify-center transition-colors shrink-0 shadow-sm ${
+                  className={`w-[52px] h-[64px] rounded-2xl text-[26px] font-extrabold flex items-center justify-center transition-all shrink-0 active:scale-90 ${
                     userAnswers[currentQuestionIndex] === opt 
-                    ? 'bg-[#3B82F6] text-white border-none' 
-                    : 'bg-[#E5E7EB] text-black border-none hover:bg-gray-300'
+                    ? 'bg-[#3B82F6] text-white shadow-[0_4px_12px_rgba(59,130,246,0.4)] border-none' 
+                    : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-gray-300 shadow-sm'
                   }`}
                 >
                   {opt}
@@ -894,7 +890,7 @@ export default function App() {
             </div>
 
             <div className="shrink-0 flex items-center">
-              <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-sm transition whitespace-nowrap text-sm">
+              <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold h-[64px] px-6 rounded-2xl shadow-[0_4px_12px_rgba(59,130,246,0.3)] transition-all whitespace-nowrap text-base active:scale-90">
                 {isLastQuestion ? '交卷' : '下一題'}
               </button>
             </div>
@@ -957,33 +953,33 @@ export default function App() {
 
         {/* --- 手機版 UI --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
-          <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
+          <div className="px-4 py-3 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white shadow-sm z-10">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
-              <span className="text-xs text-gray-400">作答檢查</span>
-              <span className="font-bold text-gray-800 text-sm truncate w-full">{recordName}</span>
+              <span className="text-[11px] text-gray-400 font-bold">作答檢查</span>
+              <span className="font-bold text-gray-800 text-[15px] truncate w-full mt-0.5">{recordName}</span>
             </div>
             <div className="flex gap-2 shrink-0 items-center">
               {timerMode !== 'none' && (
-                <div className="flex flex-col items-end mr-1 border-r border-gray-200 pr-2">
-                  <span className={`font-mono font-bold text-xs ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                <div className="flex flex-col items-end mr-2 border-r border-gray-200 pr-3">
+                  <span className={`font-mono font-bold text-[13px] ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>
                     {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
                   </span>
-                  <button onClick={() => setIsPaused(true)} className="text-[10px] text-blue-600 font-bold">⏸ 暫停</button>
+                  <button onClick={() => setIsPaused(true)} className="text-[10px] text-blue-600 font-bold mt-0.5">⏸ 暫停</button>
                 </div>
               )}
-              <button onClick={() => setCurrentPage('quiz')} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-3 py-1.5 rounded transition text-xs">修改</button>
-              <button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700 text-white font-bold px-3 py-1.5 rounded shadow transition text-xs">交卷</button>
+              <button onClick={() => setCurrentPage('quiz')} className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl transition text-xs active:scale-95">修改</button>
+              <button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-xl shadow-[0_4px_10px_rgba(22,163,74,0.3)] transition text-xs active:scale-95">交卷</button>
             </div>
           </div>
 
-          <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+          <div className="w-full flex flex-row items-center px-4 py-5 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {correctAnswers.map((_, idx) => {
               const ans = userAnswers[idx];
               const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
               return (
-                <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-20 h-24 shrink-0 rounded-xl border shadow-sm cursor-pointer ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
-                  <span className="text-xs text-gray-500 mb-1">第 {idx + 1} 題</span>
-                  <span className={`text-2xl font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '無'}</span>
+                <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-[85px] h-[105px] shrink-0 rounded-2xl border shadow-sm cursor-pointer active:scale-95 transition-transform ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
+                  <span className="text-xs text-gray-500 mb-1 font-bold">第 {idx + 1} 題</span>
+                  <span className={`text-[28px] font-extrabold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '無'}</span>
                   <span className={`text-sm mt-1 font-bold ${markOpt?.colorClass || 'text-transparent'}`}>{markOpt ? markOpt.symbol : ' '}</span>
                 </div>
               );
@@ -1054,44 +1050,44 @@ export default function App() {
 
         {/* --- 手機版 UI --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
-          <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
+          <div className="px-4 py-3 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white shadow-sm z-10">
              <div className="flex flex-col flex-1 min-w-0 pr-2">
-               <span className="text-xs text-gray-500 truncate">{recordName}</span>
+               <span className="text-[12px] font-bold text-gray-500 truncate">{recordName}</span>
                <div className="flex items-baseline mt-0.5">
-                <span className="text-lg font-bold text-blue-600">{score}</span>
-                <span className="text-xs ml-1 text-gray-500">/ {totalScore} 分</span>
+                <span className="text-[22px] font-extrabold text-blue-600">{score}</span>
+                <span className="text-xs ml-1 font-bold text-gray-500">/ {totalScore} 分</span>
               </div>
               {timerMode !== 'none' && (
-                <div className="text-[10px] mt-0.5 text-gray-400 font-mono">
+                <div className="text-[10px] mt-0.5 text-gray-400 font-mono font-bold">
                   耗時: {formatTime(timeSpent)}
                 </div>
               )}
              </div>
              <div className="flex gap-2 shrink-0">
-              <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="border border-blue-600 text-blue-600 font-bold px-3 py-1.5 rounded transition text-xs bg-white">列表</button>
-              <button onClick={() => { resetSetup(); setSetupTab('new'); setCurrentPage('setup'); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded shadow transition text-xs">新測驗</button>
+              <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2.5 rounded-xl transition text-xs active:scale-95">列表</button>
+              <button onClick={() => { resetSetup(); setSetupTab('new'); setCurrentPage('setup'); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-[0_4px_10px_rgba(59,130,246,0.3)] transition text-xs active:scale-95">新測驗</button>
              </div>
           </div>
 
-          <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+          <div className="w-full flex flex-row items-center px-4 py-5 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {details.map(item => (
-              <div key={item.questionNum} className={`relative overflow-hidden flex flex-col items-center justify-center w-[100px] h-28 shrink-0 rounded-xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <div className="flex w-full px-2 justify-between items-center mb-1 z-10">
-                  <span className="text-xs font-bold text-gray-500">#{item.questionNum}</span>
+              <div key={item.questionNum} className={`relative overflow-hidden flex flex-col items-center justify-center w-[110px] h-[120px] shrink-0 rounded-2xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <div className="flex w-full px-3 justify-between items-center mb-2 z-10">
+                  <span className="text-xs font-extrabold text-gray-500">#{item.questionNum}</span>
                   <span className={`text-xs font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
                 </div>
                 
-                <div className="flex items-center justify-center gap-2 mt-1 z-10">
+                <div className="flex items-center justify-center gap-3 z-10">
                   <div className="flex flex-col items-center">
-                    <span className="text-[10px] text-gray-400">你答</span>
-                    <span className={`text-xl font-bold ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</span>
+                    <span className="text-[10px] text-gray-400 font-bold mb-0.5">你答</span>
+                    <span className={`text-[22px] font-extrabold ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</span>
                   </div>
                   {!item.isCorrect && (
                     <>
-                      <span className="text-gray-300 text-xs">|</span>
+                      <span className="text-gray-300 text-sm">|</span>
                       <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-gray-400">正確</span>
-                        <span className="text-xl font-bold text-green-600">{item.correctAns}</span>
+                        <span className="text-[10px] text-gray-400 font-bold mb-0.5">正確</span>
+                        <span className="text-[22px] font-extrabold text-green-600">{item.correctAns}</span>
                       </div>
                     </>
                   )}
@@ -1120,21 +1116,21 @@ export default function App() {
           <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
             {pdfViewerUrl ? (
               <div className="w-full h-full flex flex-col relative">
-                {/* 植入自訂 PDF 引擎，完全解決手機無法捲動多頁的問題 */}
                 <iframe src={pdfViewerUrl} className="w-full flex-1 border-none bg-gray-800" title="PDF Viewer" />
               </div>
             ) : (
               <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
                 <span className="text-4xl mb-4">📄</span>
-                <p className="mb-2 font-bold text-lg text-white">尚未上傳題目 PDF</p>
-                <p className="mb-6 text-sm text-gray-400">尚未上傳題目 PDF，請至作答紀錄中修改上傳</p>
+                <p className="mb-2 font-bold text-lg text-white">尚未綁定題目 PDF</p>
+                <p className="mb-6 text-sm text-gray-400">測驗已開始，本區域僅顯示由雲端綁定的題庫</p>
               </div>
             )}
           </div>
 
           <div 
-            className="shrink-0 h-auto max-h-[50dvh] w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
-            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            className="shrink-0 h-auto w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex flex-col relative z-10"
+            // 【優化】加入 iPhone 底部安全區 (safe-area-inset-bottom) 防護，確保不與 Home Indicator 衝突
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
           >
             {currentPage === 'quiz' && renderQuizPage()}
             {currentPage === 'review' && renderReviewPage()}
@@ -1145,33 +1141,33 @@ export default function App() {
 
       {feedbackModal.isOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full text-center space-y-4 animate-scale-in">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center space-y-4 animate-scale-in">
             {feedbackModal.isCorrect ? (
-              <div><div className="text-5xl mb-2">✅</div><h2 className="text-2xl font-bold text-green-600">答對了！</h2></div>
+              <div><div className="text-6xl mb-3">✅</div><h2 className="text-2xl font-bold text-green-600">答對了！</h2></div>
             ) : (
-              <div><div className="text-5xl mb-2">❌</div><h2 className="text-2xl font-bold text-red-600">答錯了</h2><p className="text-gray-600 mt-2 text-lg">正確答案是：<span className="font-bold text-red-600">{feedbackModal.correctAnswer}</span></p></div>
+              <div><div className="text-6xl mb-3">❌</div><h2 className="text-2xl font-bold text-red-600">答錯了</h2><p className="text-gray-600 mt-2 text-lg">正確答案是：<span className="font-bold text-red-600">{feedbackModal.correctAnswer}</span></p></div>
             )}
-            <button onClick={handleCloseFeedback} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-4 shadow">{feedbackModal.isLast ? '進入檢查頁面' : '繼續下一題'}</button>
+            <button onClick={handleCloseFeedback} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl mt-4 shadow-lg active:scale-95 transition-transform">{feedbackModal.isLast ? '進入檢查頁面' : '繼續下一題'}</button>
           </div>
         </div>
       )}
 
       {showMarksModal && (
         <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-40 transition-opacity">
-          <div className="bg-white w-full md:w-[400px] md:relative md:rounded-xl md:mb-10 max-h-[60%] rounded-t-2xl flex flex-col mx-auto shadow-2xl">
-            <div className="p-4 border-b flex justify-between items-center">
-              <h3 className="text-lg font-bold">有標註的題目</h3>
-              <button onClick={() => setShowMarksModal(false)} className="text-gray-500 text-xl font-bold p-2">&times;</button>
+          <div className="bg-white w-full md:w-[400px] md:relative md:rounded-3xl md:mb-10 max-h-[60%] rounded-t-3xl flex flex-col mx-auto shadow-2xl" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-gray-800">有標註的題目</h3>
+              <button onClick={() => setShowMarksModal(false)} className="text-gray-400 hover:text-gray-600 text-3xl font-bold px-2 active:scale-90 transition-transform">&times;</button>
             </div>
-            <div className="p-4 flex-1 overflow-y-auto grid grid-cols-4 gap-3">
-              {Object.keys(marks).length === 0 ? <p className="col-span-4 text-center text-gray-500 py-4">目前沒有任何標註</p> : (
+            <div className="p-5 flex-1 overflow-y-auto grid grid-cols-4 gap-4">
+              {Object.keys(marks).length === 0 ? <p className="col-span-4 text-center text-gray-500 py-6 font-bold">目前沒有任何標註</p> : (
                 Object.entries(marks).map(([idxStr, markId]) => {
                   const qIdx = parseInt(idxStr, 10);
                   const markOpt = MARK_OPTIONS.find(m => m.id === markId);
                   return (
-                    <button key={qIdx} onClick={() => { setCurrentQuestionIndex(qIdx); setShowMarksModal(false); }} className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex flex-col items-center justify-center hover:bg-blue-50 transition">
-                      <span className="text-sm text-gray-500 mb-1">第 {qIdx + 1} 題</span>
-                      <span className={`text-xl font-bold ${markOpt?.colorClass || ''}`}>{markOpt?.symbol}</span>
+                    <button key={qIdx} onClick={() => { setCurrentQuestionIndex(qIdx); setShowMarksModal(false); }} className="py-4 bg-gray-50 border border-gray-200 rounded-2xl flex flex-col items-center justify-center hover:bg-blue-50 hover:border-blue-200 transition-colors active:scale-95 shadow-sm">
+                      <span className="text-[11px] text-gray-500 mb-1 font-bold">第 {qIdx + 1} 題</span>
+                      <span className={`text-[26px] font-extrabold ${markOpt?.colorClass || ''}`}>{markOpt?.symbol}</span>
                     </button>
                   );
                 })
@@ -1183,13 +1179,13 @@ export default function App() {
 
       {deleteModalId && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full text-center space-y-4 animate-scale-in">
-            <div className="text-5xl mb-2">⚠️</div>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center space-y-4 animate-scale-in">
+            <div className="text-6xl mb-3">⚠️</div>
             <h2 className="text-2xl font-bold text-gray-800">確定要刪除？</h2>
-            <p className="text-gray-600">刪除後將無法復原此筆作答紀錄。</p>
-            <div className="flex space-x-3 mt-4">
-              <button onClick={() => setDeleteModalId(null)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 rounded-lg transition">取消</button>
-              <button onClick={executeDelete} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition">確定刪除</button>
+            <p className="text-gray-600 font-medium">刪除後將無法復原此筆作答紀錄。</p>
+            <div className="flex space-x-3 mt-5">
+              <button onClick={() => setDeleteModalId(null)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-4 rounded-xl transition active:scale-95">取消</button>
+              <button onClick={executeDelete} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-xl shadow-[0_4px_10px_rgba(220,38,38,0.3)] transition active:scale-95">確定刪除</button>
             </div>
           </div>
         </div>
