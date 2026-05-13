@@ -879,7 +879,7 @@ export default function App() {
               </button>
             </div>
 
-            <div className="flex-1 flex flex-row items-center justify-center gap-2 sm:gap-3 px-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            <div className="flex-1 flex flex-row items-center justify-center gap-2 px-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
               {options.map(opt => (
                 <button 
                   key={opt} 
@@ -1130,7 +1130,7 @@ export default function App() {
         <>
           <div 
             className="flex-1 w-full lg:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden"
-            style={{ paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}
+            // 已徹底移除左右 padding
           >
             {pdfViewerUrl ? (
               <div className="w-full h-full flex flex-col relative">
@@ -1147,7 +1147,8 @@ export default function App() {
 
           <div 
             className="shrink-0 h-auto max-h-[50dvh] w-full lg:max-h-none lg:h-full lg:w-[400px] lg:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] lg:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
-            style={{ paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
+            // 保留底部安全區防誤觸，移除左右 padding
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
           >
             {currentPage === 'quiz' && renderQuizPage()}
             {currentPage === 'review' && renderReviewPage()}
