@@ -817,12 +817,12 @@ export default function App() {
         {/* --- 手機版 UI --- */}
         <div className="flex lg:hidden w-full flex-col bg-white">
           <div className="px-3 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-gray-50">
-            <div className="font-bold text-black text-sm flex items-center">
+            <div className="font-bold text-gray-800 text-sm flex items-center">
               <span>第</span>
               <select 
                 value={currentQuestionIndex} 
                 onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} 
-                className="mx-1 p-0 bg-transparent outline-none text-black font-bold appearance-none underline decoration-gray-400 text-center text-lg"
+                className="mx-1 p-0 bg-transparent outline-none text-blue-600 font-extrabold appearance-none underline decoration-gray-300 text-center text-lg"
               >
                 {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
               </select>
@@ -835,7 +835,7 @@ export default function App() {
                   <span className={`font-mono font-bold text-lg ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>
                     {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
                   </span>
-                  <button onClick={() => setIsPaused(true)} className="bg-gray-200 hover:bg-gray-300 text-blue-700 px-3 py-1 rounded-md font-bold text-sm active:scale-95 transition-transform shadow-sm">⏸ 暫停</button>
+                  <button onClick={() => setIsPaused(true)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded-md font-bold text-sm active:scale-95 transition-transform shadow-sm">⏸ 暫停</button>
                 </div>
               )}
               <button 
@@ -851,17 +851,16 @@ export default function App() {
             </div>
           </div>
           
-          {/* 作答區：單一橫排佈局 (左：標註區，中：選項，右：交卷) */}
-          <div className="w-full flex flex-row items-center justify-between px-2 py-2 bg-[#F8F9FA] shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+          <div className="w-full flex flex-row items-center justify-between px-2 py-2 bg-[#F8F9FA] shrink-0 border-t border-gray-200" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}>
             
-            {/* 左側：標註及看標註按鈕 */}
-            <div className="flex-1 flex flex-col items-start justify-center gap-1 min-w-0 pr-1">
-              <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+            {/* 左側：標註區靠左 (固定寬度確保置中對稱) */}
+            <div className="w-[85px] shrink-0 flex flex-col items-center justify-center gap-1.5">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                 {MARK_OPTIONS.map(mark => (
                   <button 
                     key={mark.id} 
                     onClick={() => handleToggleMark(mark.id)} 
-                    className={`text-[20px] sm:text-[22px] leading-none font-bold transition-all active:scale-90 bg-transparent ${
+                    className={`text-[24px] leading-none font-bold transition-all active:scale-90 bg-transparent border-none ${
                       marks[currentQuestionIndex] === mark.id 
                       ? 'scale-125 drop-shadow-md opacity-100 ' + mark.colorClass 
                       : 'opacity-40 grayscale hover:opacity-100 hover:grayscale-0 ' + mark.colorClass
@@ -871,20 +870,20 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              <button onClick={() => setShowMarksModal(true)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-[10px] font-bold py-1 px-2 rounded-md shadow-sm active:scale-95 transition-transform mt-1">
+              <button onClick={() => setShowMarksModal(true)} className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 text-[11px] font-bold py-1.5 rounded-full shadow-sm active:scale-95 transition-transform mt-1">
                 看標註
               </button>
             </div>
 
-            {/* 中間：選項置中 */}
-            <div className="shrink-0 flex flex-row items-center justify-center gap-1.5 px-1">
+            {/* 中間：選項區絕對置中 */}
+            <div className="flex-1 flex flex-row items-center justify-center gap-1.5 overflow-x-visible px-1">
               {options.map(opt => (
                 <button 
                   key={opt} 
                   onClick={() => handleSelectAnswer(opt)} 
-                  className={`w-[42px] h-[55px] sm:w-[48px] sm:h-[60px] rounded-xl text-2xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
+                  className={`w-[45px] h-[60px] sm:w-[50px] sm:h-[65px] rounded-xl text-2xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
                     userAnswers[currentQuestionIndex] === opt 
-                    ? 'bg-[#3B82F6] text-white border-none' 
+                    ? 'bg-[#3B82F6] text-white border-none scale-105' 
                     : 'bg-white text-gray-700 border-2 border-gray-200'
                   }`}
                 >
@@ -893,9 +892,9 @@ export default function App() {
               ))}
             </div>
 
-            {/* 右側：交卷靠右 */}
-            <div className="flex-1 flex justify-end items-center min-w-0 pl-1">
-              <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold h-[55px] sm:h-[60px] px-3 sm:px-4 rounded-xl shadow-sm transition whitespace-nowrap text-sm sm:text-base active:scale-95">
+            {/* 右側：交卷區靠右 (固定寬度確保置中對稱) */}
+            <div className="w-[85px] shrink-0 flex items-center justify-end">
+              <button onClick={handleNext} className="w-full bg-[#3B82F6] hover:bg-blue-600 text-white font-bold h-[60px] sm:h-[65px] rounded-xl shadow-sm transition-transform active:scale-95 text-[15px]">
                 {isLastQuestion ? '交卷' : '下一題'}
               </button>
             </div>
