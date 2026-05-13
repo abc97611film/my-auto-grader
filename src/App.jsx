@@ -1,10 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-// 更新：引入支援離線快取的 initializeFirestore 等模組
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
-// --- Firebase 初始化區塊 ---
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     return JSON.parse(__firebase_config);
@@ -25,7 +23,6 @@ try {
   if (config && config.apiKey) {
     app = initializeApp(config);
     auth = getAuth(app);
-    // 開啟 Firebase 離線快取功能！
     db = initializeFirestore(app, {
       localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
     });
@@ -46,6 +43,12 @@ const MARK_OPTIONS = [
 ];
 const ALPHABET = ['A', 'B', 'C', 'D', 'E'];
 
+const formatTime = (seconds) => {
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const s = (seconds % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [records, setRecords] = useState([]);
@@ -56,7 +59,6 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [pdfUrl, setPdfUrl] = useState(null);
-
   const [currentPage, setCurrentPage] = useState('setup');
 
   const [totalQuestions, setTotalQuestions] = useState('');
@@ -65,6 +67,14 @@ export default function App() {
   const [gradingMode, setGradingMode] = useState('all-at-once');
   const [rawAnswers, setRawAnswers] = useState('');
   const [correctAnswers, setCorrectAnswers] = useState([]);
+
+  // 計時器相關狀態
+  const [timerMode, setTimerMode] = useState('none'); 
+  const [timeLimit, setTimeLimit] = useState(''); 
+  const [timeSpent, setTimeSpent] = useState(0); 
+  const [timeRemaining, setTimeRemaining] = useState(0); 
+  const [isPaused, setIsPaused] = useState(false);
+  const timerRef = useRef({ timeSpent: 0, timeRemaining: 0 });
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState({});
@@ -79,7 +89,6 @@ export default function App() {
       setAuthError("尚未填寫 Firebase 金鑰 (apiKey等)，請檢查 VS Code 裡的程式碼是否已填妥！");
       return;
     }
-    
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
@@ -112,8 +121,39 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
+  // 更新 timerRef，供獨立存檔使用以避免過度寫入
   useEffect(() => {
-    if (currentPage === 'quiz' && currentRecordId && db && user) {
+    timerRef.current = { timeSpent, timeRemaining };
+  }, [timeSpent, timeRemaining]);
+
+  // 計時器邏輯
+  useEffect(() => {
+    let interval = null;
+    if ((currentPage === 'quiz' || currentPage === 'review') && !isPaused && timerMode !== 'none') {
+      interval = setInterval(() => {
+        setTimeSpent(prev => prev + 1);
+        if (timerMode === 'down') {
+          setTimeRemaining(prev => Math.max(0, prev - 1));
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [currentPage, isPaused, timerMode]);
+
+  // 倒計時自動交卷機制
+  useEffect(() => {
+    if (timerMode === 'down' && timeRemaining === 0 && (currentPage === 'quiz' || currentPage === 'review') && !isPaused) {
+      if (db && user && currentRecordId) {
+        const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
+        setDoc(docRef, { status: 'completed', updatedAt: Date.now() }, { merge: true }).catch(console.error);
+      }
+      setCurrentPage('result');
+    }
+  }, [timeRemaining, timerMode, currentPage, isPaused, db, user, currentRecordId]);
+
+  // 主要作答進度存檔 (不包含秒數跳動頻繁寫入)
+  useEffect(() => {
+    if ((currentPage === 'quiz' || currentPage === 'review') && currentRecordId && db && user) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
       setDoc(docRef, {
         recordName,
@@ -125,11 +165,31 @@ export default function App() {
         userAnswers,
         marks,
         currentQuestionIndex,
+        timerMode,
+        timeLimit,
+        timeSpent: timerRef.current.timeSpent,
+        timeRemaining: timerRef.current.timeRemaining,
         status: 'in-progress',
         updatedAt: Date.now()
       }, { merge: true }).catch(console.error);
     }
-  }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName]);
+  }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName, timerMode, timeLimit]);
+
+  // 每 10 秒儲存一次時間狀態，防止重新整理流失過多紀錄
+  useEffect(() => {
+    let interval = null;
+    if ((currentPage === 'quiz' || currentPage === 'review') && currentRecordId && db && user) {
+      interval = setInterval(() => {
+        const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
+        setDoc(docRef, {
+          timeSpent: timerRef.current.timeSpent,
+          timeRemaining: timerRef.current.timeRemaining,
+          updatedAt: Date.now()
+        }, { merge: true }).catch(console.error);
+      }, 10000);
+    }
+    return () => clearInterval(interval);
+  }, [currentPage, currentRecordId, db, user]);
 
   const handleGoogleLogin = async () => {
     if (!auth) return;
@@ -186,11 +246,27 @@ export default function App() {
       return;
     }
 
+    if (timerMode === 'down') {
+      const limit = parseInt(timeLimit, 10);
+      if (!limit || limit <= 0) {
+        setSetupError('請輸入有效的倒計時時限（分鐘）。');
+        return;
+      }
+      setTimeRemaining(limit * 60);
+      timerRef.current.timeRemaining = limit * 60;
+    } else {
+      setTimeRemaining(0);
+      timerRef.current.timeRemaining = 0;
+    }
+
     setSetupError('');
     setCorrectAnswers(parsedAnswers.slice(0, qCount));
     setUserAnswers({});
     setMarks({});
     setCurrentQuestionIndex(0);
+    setTimeSpent(0);
+    timerRef.current.timeSpent = 0;
+    setIsPaused(false);
     
     const newId = Date.now().toString();
     setCurrentRecordId(newId);
@@ -266,7 +342,15 @@ export default function App() {
     setUserAnswers(record.userAnswers || {});
     setMarks(record.marks || {});
     setCurrentQuestionIndex(record.currentQuestionIndex || 0);
+    
+    setTimerMode(record.timerMode || 'none');
+    setTimeLimit(record.timeLimit || '');
+    setTimeSpent(record.timeSpent || 0);
+    setTimeRemaining(record.timeRemaining || 0);
+    timerRef.current = { timeSpent: record.timeSpent || 0, timeRemaining: record.timeRemaining || 0 };
+    
     setCurrentRecordId(record.id);
+    setIsPaused(true); 
     setCurrentPage('quiz');
   };
 
@@ -279,6 +363,10 @@ export default function App() {
     setCorrectAnswers(record.correctAnswers);
     setUserAnswers(record.userAnswers || {});
     setMarks(record.marks || {});
+    
+    setTimerMode(record.timerMode || 'none');
+    setTimeSpent(record.timeSpent || 0);
+    
     setCurrentRecordId(record.id);
     setCurrentPage('result');
   };
@@ -369,6 +457,26 @@ export default function App() {
               placeholder="例如: 2" value={pointsPerQuestion} onChange={(e) => setPointsPerQuestion(e.target.value.replace(/[^0-9.]/g, ''))}
             />
           </div>
+          
+          {/* 計時設定 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">計時設定</label>
+            <div className="grid grid-cols-3 gap-2">
+              <button className={`py-2 rounded-lg font-medium transition ${timerMode === 'none' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setTimerMode('none')}>不計時</button>
+              <button className={`py-2 rounded-lg font-medium transition ${timerMode === 'up' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setTimerMode('up')}>正計時</button>
+              <button className={`py-2 rounded-lg font-medium transition ${timerMode === 'down' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setTimerMode('down')}>倒計時</button>
+            </div>
+            {timerMode === 'down' && (
+              <div className="mt-2">
+                <input 
+                  type="text" inputMode="numeric" pattern="[0-9]*"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="請輸入時限 (分鐘)" value={timeLimit} onChange={(e) => setTimeLimit(e.target.value.replace(/[^0-9]/g, ''))}
+                />
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">批改方式</label>
             <div className="grid grid-cols-2 gap-2">
@@ -457,6 +565,24 @@ export default function App() {
     </div>
   );
 
+  const renderPausedScreen = () => (
+    <div className="flex w-full h-full flex-col items-center justify-center bg-white space-y-6 relative z-10 p-4">
+      <div className="text-6xl mb-2 animate-pulse">⏸️</div>
+      <h2 className="text-3xl font-bold text-gray-800">作答已暫停</h2>
+      {timerMode !== 'none' && (
+        <div className="bg-gray-100 px-6 py-4 rounded-xl text-center">
+          <p className="text-gray-500 text-sm mb-1">{timerMode === 'down' ? '剩餘時間' : '已耗時'}</p>
+          <p className={`font-mono text-3xl font-bold ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600' : 'text-gray-800'}`}>
+            {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
+          </p>
+        </div>
+      )}
+      <button onClick={() => setIsPaused(false)} className="bg-blue-600 hover:bg-blue-700 text-white w-full max-w-xs py-4 rounded-xl font-bold shadow-lg transition text-lg">
+        繼續作答
+      </button>
+    </div>
+  );
+
   const renderQuizPage = () => {
     const options = ALPHABET.slice(0, optionCount);
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
@@ -479,6 +605,16 @@ export default function App() {
                  <span className="font-medium text-gray-700">題 / {correctAnswers.length} 題</span>
                </div>
             </div>
+            
+            {timerMode !== 'none' && (
+              <div className="flex flex-col items-end justify-center px-4 border-r border-gray-200 mr-2 shrink-0">
+                <span className={`font-mono font-bold text-lg leading-none ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                  {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
+                </span>
+                <button onClick={() => setIsPaused(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold mt-1">⏸ 暫停</button>
+              </div>
+            )}
+
             <button 
               onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
               className="flex items-center justify-center w-10 h-10 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
@@ -529,16 +665,27 @@ export default function App() {
               </select>
               <span>題 / {correctAnswers.length}題</span>
             </div>
-            <button 
-              onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
-              className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0 ml-2"
-              title="回首頁"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-              </svg>
-            </button>
+
+            <div className="flex items-center">
+              {timerMode !== 'none' && (
+                <div className="flex flex-col items-end mr-3 border-r border-gray-200 pr-3">
+                  <span className={`font-mono font-bold text-sm ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                    {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
+                  </span>
+                  <button onClick={() => setIsPaused(true)} className="text-[10px] text-blue-600 font-bold mt-0.5">⏸ 暫停</button>
+                </div>
+              )}
+              <button 
+                onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
+                className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
+                title="回首頁"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+              </button>
+            </div>
           </div>
           
           <div className="w-full flex flex-row items-center px-2 py-3 gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
@@ -601,9 +748,19 @@ export default function App() {
       <>
         {/* --- 電腦版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
-          <div className="p-4 border-b bg-gray-50 text-center shrink-0">
-            <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
-            <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
+          <div className="p-4 border-b bg-gray-50 flex justify-between items-center shrink-0">
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
+              <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
+            </div>
+            {timerMode !== 'none' && (
+              <div className="flex flex-col items-end">
+                <span className={`font-mono font-bold text-lg ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                  {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
+                </span>
+                <button onClick={() => setIsPaused(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold mt-1">⏸ 暫停</button>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-4">
@@ -644,7 +801,15 @@ export default function App() {
               <span className="text-xs text-gray-400">作答檢查</span>
               <span className="font-bold text-gray-800 text-sm truncate w-full">{recordName}</span>
             </div>
-            <div className="flex gap-2 shrink-0">
+            <div className="flex gap-2 shrink-0 items-center">
+              {timerMode !== 'none' && (
+                <div className="flex flex-col items-end mr-1 border-r border-gray-200 pr-2">
+                  <span className={`font-mono font-bold text-xs ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                    {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
+                  </span>
+                  <button onClick={() => setIsPaused(true)} className="text-[10px] text-blue-600 font-bold">⏸ 暫停</button>
+                </div>
+              )}
               <button onClick={() => setCurrentPage('quiz')} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-3 py-1.5 rounded transition text-xs">修改</button>
               <button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700 text-white font-bold px-3 py-1.5 rounded shadow transition text-xs">交卷</button>
             </div>
@@ -682,6 +847,11 @@ export default function App() {
               <span className="text-4xl font-bold">{score}</span>
               <span className="text-lg ml-1 opacity-80">/ {totalScore} 分</span>
             </div>
+            {timerMode !== 'none' && (
+              <div className="mt-2 text-sm opacity-90 font-mono bg-blue-700/30 inline-block px-3 py-1 rounded-full">
+                總耗時: {formatTime(timeSpent)}
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -737,6 +907,11 @@ export default function App() {
                 <span className="text-lg font-bold text-blue-600">{score}</span>
                 <span className="text-xs ml-1 text-gray-500">/ {totalScore} 分</span>
               </div>
+              {timerMode !== 'none' && (
+                <div className="text-[10px] mt-0.5 text-gray-400 font-mono">
+                  耗時: {formatTime(timeSpent)}
+                </div>
+              )}
              </div>
              <div className="flex gap-2 shrink-0">
               <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="border border-blue-600 text-blue-600 font-bold px-3 py-1.5 rounded transition text-xs bg-white">列表</button>
@@ -793,7 +968,6 @@ export default function App() {
 
       {currentPage !== 'setup' && (
         <>
-          {/* 左側 / 上方：PDF 瀏覽區 */}
           <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
             {pdfUrl ? (
               <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
@@ -810,13 +984,12 @@ export default function App() {
             )}
           </div>
 
-          {/* 右側 / 下方：App 介面區 */}
           <div 
             className="shrink-0 h-auto max-h-[50dvh] w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
             style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           >
-            {currentPage === 'quiz' && renderQuizPage()}
-            {currentPage === 'review' && renderReviewPage()}
+            {currentPage === 'quiz' && (isPaused ? renderPausedScreen() : renderQuizPage())}
+            {currentPage === 'review' && (isPaused ? renderPausedScreen() : renderReviewPage())}
             {currentPage === 'result' && renderResultPage()}
           </div>
         </>
