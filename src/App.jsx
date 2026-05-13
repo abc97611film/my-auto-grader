@@ -816,7 +816,7 @@ export default function App() {
 
         {/* --- 手機版 UI --- */}
         <div className="flex lg:hidden w-full flex-col bg-white">
-          <div className="px-3 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-gray-50">
+          <div className="px-3 py-1.5 flex justify-between items-center shrink-0 border-b border-gray-200 bg-gray-50">
             <div className="font-bold text-black text-sm flex items-center">
               <span>第</span>
               <select 
@@ -851,18 +851,18 @@ export default function App() {
             </div>
           </div>
           
-          <div className="w-full flex flex-col px-2 py-2 gap-2 bg-[#F8F9FA]">
-            {/* 標註列與看標註 */}
-            <div className="flex flex-row justify-between items-center px-1">
-              <div className="flex flex-row gap-5">
+          <div className="w-full flex flex-row items-center px-2 py-2 gap-3 bg-[#F8F9FA] overflow-x-auto [&::-webkit-scrollbar]:hidden shrink-0">
+            {/* 標註與看標註 */}
+            <div className="flex flex-row items-center gap-4 shrink-0 border-r border-gray-300 pr-3">
+              <div className="flex flex-row items-center gap-3">
                 {MARK_OPTIONS.map(mark => (
                   <button 
                     key={mark.id} 
                     onClick={() => handleToggleMark(mark.id)} 
-                    className={`text-[28px] leading-none font-bold transition-all active:scale-90 ${
+                    className={`text-[24px] leading-none font-bold transition-all active:scale-90 ${
                       marks[currentQuestionIndex] === mark.id 
                       ? 'scale-125 drop-shadow-md opacity-100 ' + mark.colorClass 
-                      : 'opacity-30 grayscale hover:opacity-100 hover:grayscale-0 ' + mark.colorClass
+                      : 'opacity-40 grayscale hover:opacity-100 hover:grayscale-0 ' + mark.colorClass
                     }`}
                   >
                     {mark.symbol}
@@ -874,29 +874,28 @@ export default function App() {
               </button>
             </div>
 
-            {/* 選項與下一題按鈕 */}
-            <div className="flex flex-row items-stretch justify-between gap-2">
-              <div className="flex-1 flex flex-row items-center justify-center gap-1.5 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                {options.map(opt => (
-                  <button 
-                    key={opt} 
-                    onClick={() => handleSelectAnswer(opt)} 
-                    className={`flex-1 max-w-[65px] h-[70px] rounded-xl text-3xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
-                      userAnswers[currentQuestionIndex] === opt 
-                      ? 'bg-[#3B82F6] text-white border-none' 
-                      : 'bg-white text-gray-700 border-2 border-gray-200'
-                    }`}
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
-
-              <div className="shrink-0 flex items-stretch">
-                <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold px-4 rounded-xl shadow-sm transition whitespace-nowrap text-base active:scale-95">
-                  {isLastQuestion ? '交卷' : '下一題'}
+            {/* 選項區 */}
+            <div className="flex flex-row items-center gap-2 shrink-0">
+              {options.map(opt => (
+                <button 
+                  key={opt} 
+                  onClick={() => handleSelectAnswer(opt)} 
+                  className={`w-[48px] h-[54px] rounded-xl text-2xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
+                    userAnswers[currentQuestionIndex] === opt 
+                    ? 'bg-[#3B82F6] text-white border-none' 
+                    : 'bg-white text-gray-700 border-2 border-gray-200'
+                  }`}
+                >
+                  {opt}
                 </button>
-              </div>
+              ))}
+            </div>
+
+            {/* 下一題 */}
+            <div className="shrink-0 flex items-center ml-1">
+              <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold h-[54px] px-5 rounded-xl shadow-sm transition whitespace-nowrap text-base active:scale-95">
+                {isLastQuestion ? '交卷' : '下一題'}
+              </button>
             </div>
           </div>
         </div>
