@@ -188,7 +188,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [currentPage, currentRecordId, db, user]);
 
-  // 【優化】強制電腦版與手機版皆以「最寬寬度」顯示 PDF
   useEffect(() => {
     if (!pdfUrl) {
       setPdfViewerUrl(null);
@@ -205,7 +204,6 @@ export default function App() {
           <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
           <style>
             body { margin: 0; padding: 0; background: #374151; display: flex; flex-direction: column; align-items: center; min-height: 100vh; overflow-x: hidden; }
-            /* 取消所有的 max-width 限制，強制寬度為 100% 填滿視窗 */
             .page-container { margin-bottom: 8px; width: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.5); background: white; }
             canvas { width: 100% !important; height: auto !important; display: block; }
             #loading { color: #D1D5DB; margin-top: 40px; font-family: sans-serif; font-size: 15px; font-weight: bold; text-align: center; line-height: 1.5; }
@@ -216,7 +214,7 @@ export default function App() {
         <body>
           <div id="loading">
             <div class="spinner"></div>
-            處理 PDF 中...<br><span style="font-size: 12px; font-weight: normal; opacity: 0.8">這可能會花費幾秒鐘</span>
+            處理 PDF 中...<br><span style="font-size: 12px; font-weight: normal; opacity: 0.8">這可能會需要幾秒鐘</span>
           </div>
           <div id="container" style="width: 100%; display: flex; flex-direction: column; align-items: center;"></div>
           <script>
@@ -238,7 +236,6 @@ export default function App() {
                   container.appendChild(wrapper);
 
                   pdf.getPage(pageNum).then(page => {
-                    // 使用更高的解析度倍率 (2.5)，確保在 100% 寬度下文字依然銳利
                     const viewport = page.getViewport({scale: 2.5}); 
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
@@ -568,7 +565,7 @@ export default function App() {
           </div>
           
           <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 綁定紀錄 (免開 Storage 版)</label>
+            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 檔</label>
             <input 
               type="file" 
               accept="application/pdf"
@@ -577,7 +574,7 @@ export default function App() {
               className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer disabled:opacity-50"
             />
             {isUploadingPdf && <span className="text-xs text-blue-600 mt-2 block font-bold animate-pulse">⏳ PDF 轉換中... 請稍候</span>}
-            {!isUploadingPdf && pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 已成功轉換並綁定</span>}
+            {!isUploadingPdf && pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 已成功上傳</span>}
           </div>
 
           <div>
@@ -844,7 +841,6 @@ export default function App() {
             </div>
           </div>
           
-          {/* 優化：加長高度、拉開按鈕間距，確保 19.5:9 比例的 iPhone 15 Pro 下方看起來平衡 */}
           <div className="w-full flex flex-row items-center px-3 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             <div className="flex flex-col gap-2 shrink-0">
               <div className="relative">
@@ -1121,15 +1117,14 @@ export default function App() {
             ) : (
               <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
                 <span className="text-4xl mb-4">📄</span>
-                <p className="mb-2 font-bold text-lg text-white">尚未綁定題目 PDF</p>
-                <p className="mb-6 text-sm text-gray-400">測驗已開始，本區域僅顯示由雲端綁定的題庫</p>
+                <p className="mb-2 font-bold text-lg text-white">尚未上傳題目 PDF</p>
+                <p className="mb-6 text-sm text-gray-400">尚未上傳題目 PDF，請至作答紀錄中修改上傳</p>
               </div>
             )}
           </div>
 
           <div 
             className="shrink-0 h-auto w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex flex-col relative z-10"
-            // 【優化】加入 iPhone 底部安全區 (safe-area-inset-bottom) 防護，確保不與 Home Indicator 衝突
             style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
           >
             {currentPage === 'quiz' && renderQuizPage()}
