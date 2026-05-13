@@ -259,6 +259,29 @@ export default function App() {
     }
   };
 
+  // 在新分頁或外部應用程式中強制完整開啟 PDF
+  const handleOpenPdf = () => {
+    if (!pdfUrl) return;
+    try {
+      if (pdfUrl.startsWith('data:application/pdf')) {
+        const base64 = pdfUrl.split(',')[1];
+        const binary = atob(base64);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          array[i] = binary.charCodeAt(i);
+        }
+        const blob = new Blob([array], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      } else {
+        window.open(pdfUrl, '_blank');
+      }
+    } catch (error) {
+      console.error("開啟 PDF 失敗:", error);
+      alert("無法開啟 PDF，請確認檔案格式是否正確。");
+    }
+  };
+
   const parseAnswers = (text) => text.replace(/[^a-zA-Z]/g, '').toUpperCase().split('');
 
   const handleStart = () => {
@@ -285,14 +308,12 @@ export default function App() {
       return;
     }
 
-    // 【修正：讓使用者在修改紀錄時也能套用新的倒計時設定】
     if (timerMode === 'down') {
       const limit = parseInt(timeLimit, 10);
       if (!limit || limit <= 0) {
         setSetupError('請輸入有效的倒計時時限（分鐘）。');
         return;
       }
-      // 新的剩餘時間 = (總時限秒數) - (已經作答消耗的秒數)
       const newRemaining = Math.max(0, (limit * 60) - timeSpent);
       setTimeRemaining(newRemaining);
       timerRef.current.timeRemaining = newRemaining;
@@ -1037,14 +1058,22 @@ export default function App() {
       
       {currentPage === 'setup' && renderSetupPage()}
 
-      {/* 獨立覆蓋全螢幕的暫停畫面，確保 PDF 也能被遮擋 */}
       {currentPage !== 'setup' && isPaused && renderPausedScreen()}
 
       {currentPage !== 'setup' && !isPaused && (
         <>
           <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
             {pdfUrl ? (
-              <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
+              <div className="w-full h-full flex flex-col relative">
+                {/* 加入手機版專用的強制開啟 PDF 按鈕 */}
+                <div className="md:hidden bg-gray-900 border-b border-gray-700 p-2 flex justify-between items-center shrink-0 z-10 shadow-md">
+                  <span className="text-xs text-gray-300 font-medium">手機若無法翻頁請點擊右方 ➡️</span>
+                  <button onClick={handleOpenPdf} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow transition">
+                    獨立開啟 PDF
+                  </button>
+                </div>
+                <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full flex-1 border-none bg-white" title="PDF Viewer" />
+              </div>
             ) : (
               <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
                 <span className="text-4xl mb-4">📄</span>
