@@ -85,6 +85,17 @@ export default function App() {
   const [feedbackModal, setFeedbackModal] = useState({ isOpen: false, isCorrect: false, correctAnswer: '' });
   const [showMarksModal, setShowMarksModal] = useState(false);
 
+  // 【核心機制】：強迫 iOS/Android 網頁啟用「滿版安全區」渲染
+  useEffect(() => {
+    let meta = document.querySelector("meta[name=viewport]");
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "viewport";
+      document.head.appendChild(meta);
+    }
+    meta.content = "width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0, viewport-fit=cover";
+  }, []);
+
   useEffect(() => {
     if (!auth) {
       setAuthError("尚未填寫 Firebase 金鑰 (apiKey等)，請檢查 VS Code 裡的程式碼是否已填妥！");
@@ -200,7 +211,7 @@ export default function App() {
         <html lang="zh-TW">
         <head>
           <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0, viewport-fit=cover">
           <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
           <style>
             body { margin: 0; padding: 0; background: #374151; display: flex; flex-direction: column; align-items: center; min-height: 100vh; overflow-x: hidden; }
@@ -522,7 +533,7 @@ export default function App() {
   };
 
   const renderSetupPage = () => (
-    <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-xl p-6 flex flex-col max-h-[95vh] overflow-hidden relative z-10">
+    <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-xl p-6 flex flex-col overflow-hidden relative z-10" style={{ maxHeight: 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px)' }}>
       <div className="flex justify-between items-center mb-4 shrink-0">
         <h1 className="text-xl font-bold text-gray-800">選擇題自動批改</h1>
         {user && user.isAnonymous && (
@@ -712,11 +723,14 @@ export default function App() {
   );
 
   const renderPausedScreen = () => (
-    <div className="fixed inset-0 w-full h-[100dvh] flex flex-col items-center justify-center bg-white space-y-8 z-[100] p-4">
+    <div 
+      className="fixed inset-0 w-full h-[100dvh] flex flex-col items-center justify-center bg-white space-y-8 z-[100]"
+      style={{ padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }}
+    >
       <div className="text-6xl mb-2 animate-pulse">⏸️</div>
       <h2 className="text-3xl font-bold text-gray-800">作答已暫停</h2>
       
-      <div className="w-full max-w-sm flex flex-row items-stretch justify-center gap-4">
+      <div className="w-full max-w-sm flex flex-row items-stretch justify-center gap-4 px-4">
         {timerMode !== 'none' && (
           <div className="bg-gray-100 flex-1 px-4 py-4 rounded-xl text-center flex flex-col justify-center">
             <p className="text-gray-500 text-sm mb-1">{timerMode === 'down' ? '剩餘時間' : '已耗時'}</p>
@@ -736,253 +750,123 @@ export default function App() {
     </div>
   );
 
+  // 【優化】現在這是一套共用的高質感左右分割 UI
   const renderQuizPage = () => {
     const options = ALPHABET.slice(0, optionCount);
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
 
     return (
-      <>
-        {/* --- 電腦版 UI --- */}
-        <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
-          <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
-            <div className="flex flex-col flex-1 min-w-0 pr-2">
-               <span className="text-sm font-bold text-blue-600 mb-1 leading-tight break-words">
-                 {recordName}
-                 <span className="block mt-0.5 text-xs opacity-75 font-normal">(自動儲存中)</span>
-               </span>
-               <div className="flex items-center space-x-2">
-                 <span className="font-medium text-gray-700">第</span>
-                 <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 border border-gray-300 rounded outline-none font-bold text-blue-600">
-                   {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
-                 </select>
-                 <span className="font-medium text-gray-700">題 / {correctAnswers.length} 題</span>
-               </div>
-            </div>
-            
-            {timerMode !== 'none' && (
-              <div className="flex flex-col items-end justify-center px-4 border-r border-gray-200 mr-2 shrink-0">
-                <span className={`font-mono font-bold text-lg leading-none ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
-                  {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
-                </span>
-                <button onClick={() => setIsPaused(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold mt-1">⏸ 暫停</button>
-              </div>
-            )}
-
-            <button 
-              onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
-              className="flex items-center justify-center w-10 h-10 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
-              title="回首頁"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-              </svg>
-            </button>
-          </div>
-
-          <div className="p-4 flex justify-center space-x-4 border-b shrink-0">
-            {MARK_OPTIONS.map(mark => (
-              <button 
-                key={mark.id} 
-                onClick={() => handleToggleMark(mark.id)} 
-                className={`text-2xl w-12 h-12 flex items-center justify-center rounded-full transition-all font-bold ${marks[currentQuestionIndex] === mark.id ? 'bg-blue-100 scale-110 shadow-md opacity-100 ' + mark.colorClass : 'bg-gray-50 hover:bg-gray-100 opacity-40 hover:opacity-100 ' + mark.colorClass}`}
-              >
-                {mark.symbol}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-gray-50/50">
-            {options.map(opt => (
-              <button key={opt} onClick={() => handleSelectAnswer(opt)} className={`w-full p-4 rounded-xl border-2 text-xl font-bold transition ${userAnswers[currentQuestionIndex] === opt ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-gray-50'}`}>{opt}</button>
-            ))}
-          </div>
-
-          <div className="p-4 border-t bg-white flex justify-between items-center shrink-0">
-            <button onClick={() => setShowMarksModal(true)} className="text-gray-600 font-medium hover:text-gray-800 px-3 py-2 rounded">看標註題目</button>
-            <button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow transition">{isLastQuestion ? '作答完成' : '下一題'}</button>
-          </div>
-        </div>
-
-        {/* --- 手機版 UI (針對 iPhone 15 Pro 高屏占比優化) --- */}
-        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
-          <div className="px-4 py-3 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white shadow-sm z-10">
-            <div className="font-bold text-black text-[15px] flex items-center">
-              <span>第</span>
-              <select 
-                value={currentQuestionIndex} 
-                onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} 
-                className="mx-1 p-0 bg-transparent outline-none text-blue-600 font-extrabold appearance-none underline decoration-gray-300 text-center"
-              >
-                {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
-              </select>
-              <span>題 / {correctAnswers.length}題</span>
-            </div>
-
-            <div className="flex items-center">
-              {timerMode !== 'none' && (
-                <div className="flex flex-col items-end mr-4 border-r border-gray-200 pr-4">
-                  <span className={`font-mono font-bold text-[15px] ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>
-                    {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
-                  </span>
-                  <button onClick={() => setIsPaused(true)} className="text-[11px] text-blue-600 font-bold mt-1 active:scale-95 transition-transform">⏸ 暫停</button>
-                </div>
-              )}
-              <button 
-                onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
-                className="flex items-center justify-center w-9 h-9 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-all shrink-0 active:scale-90"
-                title="回首頁"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                </svg>
-              </button>
-            </div>
+      <div className="flex w-full h-full flex-col overflow-hidden bg-white">
+        <div className="p-3 sm:p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
+          <div className="flex flex-col flex-1 min-w-0 pr-2">
+             <span className="text-xs sm:text-sm font-bold text-blue-600 mb-1 leading-tight truncate">
+               {recordName}
+               <span className="hidden sm:inline-block ml-2 text-[10px] opacity-75 font-normal">(自動儲存中)</span>
+             </span>
+             <div className="flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base">
+               <span className="font-medium text-gray-700">第</span>
+               <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 border border-gray-300 rounded outline-none font-bold text-blue-600 bg-white">
+                 {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
+               </select>
+               <span className="font-medium text-gray-700">題 / {correctAnswers.length} 題</span>
+             </div>
           </div>
           
-          <div className="w-full flex flex-row items-center px-3 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-            <div className="flex flex-col gap-2 shrink-0">
-              <div className="relative">
-                <select
-                  value={marks[currentQuestionIndex] || ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setMarks(prev => {
-                      const newMarks = { ...prev };
-                      if (!val) delete newMarks[currentQuestionIndex];
-                      else newMarks[currentQuestionIndex] = val;
-                      return newMarks;
-                    });
-                  }}
-                  className="appearance-none bg-[#E5E7EB] border-none text-gray-800 py-2 pl-3 pr-7 rounded-xl text-xs font-bold outline-none w-[90px] shadow-sm"
-                >
-                  <option value="">標註選單</option>
-                  {MARK_OPTIONS.map(m => <option key={m.id} value={m.id}>{m.symbol}</option>)}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center px-1 text-gray-500">
-                  <svg className="fill-current h-4 w-4" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-                </div>
-              </div>
-              <button onClick={() => setShowMarksModal(true)} className="bg-gray-700 hover:bg-gray-800 text-white text-xs font-bold py-2 px-2 rounded-xl shadow-sm transition active:scale-95">
-                看標註
-              </button>
+          {timerMode !== 'none' && (
+            <div className="flex flex-col items-end justify-center px-2 sm:px-4 border-r border-gray-200 mr-2 shrink-0">
+              <span className={`font-mono font-bold text-sm sm:text-lg leading-none ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
+              </span>
+              <button onClick={() => setIsPaused(true)} className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-800 font-bold mt-1">⏸ 暫停</button>
             </div>
+          )}
 
-            <div className="flex-1 flex flex-row items-center justify-center gap-2 md:gap-3 px-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-              {options.map(opt => (
-                <button 
-                  key={opt} 
-                  onClick={() => handleSelectAnswer(opt)} 
-                  className={`w-[52px] h-[64px] rounded-2xl text-[26px] font-extrabold flex items-center justify-center transition-all shrink-0 active:scale-90 ${
-                    userAnswers[currentQuestionIndex] === opt 
-                    ? 'bg-[#3B82F6] text-white shadow-[0_4px_12px_rgba(59,130,246,0.4)] border-none' 
-                    : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-gray-300 shadow-sm'
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-
-            <div className="shrink-0 flex items-center">
-              <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold h-[64px] px-6 rounded-2xl shadow-[0_4px_12px_rgba(59,130,246,0.3)] transition-all whitespace-nowrap text-base active:scale-90">
-                {isLastQuestion ? '交卷' : '下一題'}
-              </button>
-            </div>
-          </div>
+          <button 
+            onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
+            className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
+            title="回首頁"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+          </button>
         </div>
-      </>
+
+        <div className="p-2 sm:p-4 flex justify-center space-x-2 sm:space-x-4 border-b shrink-0">
+          {MARK_OPTIONS.map(mark => (
+            <button 
+              key={mark.id} 
+              onClick={() => handleToggleMark(mark.id)} 
+              className={`text-xl sm:text-2xl w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full transition-all font-bold ${marks[currentQuestionIndex] === mark.id ? 'bg-blue-100 scale-110 shadow-md opacity-100 ' + mark.colorClass : 'bg-gray-50 hover:bg-gray-100 opacity-40 hover:opacity-100 ' + mark.colorClass}`}
+            >
+              {mark.symbol}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 p-3 sm:p-6 space-y-3 sm:space-y-4 overflow-y-auto bg-gray-50/50">
+          {options.map(opt => (
+            <button key={opt} onClick={() => handleSelectAnswer(opt)} className={`w-full p-3 sm:p-4 rounded-xl border-2 text-lg sm:text-xl font-bold transition ${userAnswers[currentQuestionIndex] === opt ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-gray-50'}`}>{opt}</button>
+          ))}
+        </div>
+
+        <div className="p-3 sm:p-4 border-t bg-white flex justify-between items-center shrink-0">
+          <button onClick={() => setShowMarksModal(true)} className="text-sm sm:text-base text-gray-600 font-medium hover:text-gray-800 px-2 py-2 rounded">看標註</button>
+          <button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg shadow transition text-sm sm:text-base">{isLastQuestion ? '作答完成' : '下一題'}</button>
+        </div>
+      </div>
     );
   };
 
   const renderReviewPage = () => {
     return (
-      <>
-        {/* --- 電腦版 UI --- */}
-        <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
-          <div className="p-4 border-b bg-gray-50 flex justify-between items-center shrink-0">
-            <div className="text-left">
-              <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
-              <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
+      <div className="flex w-full h-full flex-col overflow-hidden bg-white">
+        <div className="p-3 sm:p-4 border-b bg-gray-50 flex justify-between items-center shrink-0">
+          <div className="text-left flex-1 min-w-0">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-800">作答檢查</h2>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">{recordName}</p>
+          </div>
+          {timerMode !== 'none' && (
+            <div className="flex flex-col items-end">
+              <span className={`font-mono font-bold text-sm sm:text-lg ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
+              </span>
+              <button onClick={() => setIsPaused(true)} className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-800 font-bold mt-1">⏸ 暫停</button>
             </div>
-            {timerMode !== 'none' && (
-              <div className="flex flex-col items-end">
-                <span className={`font-mono font-bold text-lg ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
-                  {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
-                </span>
-                <button onClick={() => setIsPaused(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold mt-1">⏸ 暫停</button>
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4">
-            <table className="w-full text-center border-collapse">
-              <thead>
-                <tr className="border-b-2 border-gray-200">
-                  <th className="py-2 text-gray-600">題號</th>
-                  <th className="py-2 text-gray-600">答案</th>
-                  <th className="py-2 text-gray-600">標註</th>
-                </tr>
-              </thead>
-              <tbody>
-                {correctAnswers.map((_, idx) => {
-                  const ans = userAnswers[idx];
-                  const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
-                  return (
-                    <tr key={idx} className={`border-b border-gray-100 ${!ans ? 'bg-red-50' : ''}`}>
-                      <td className="py-3 font-medium text-gray-700">{idx + 1}</td>
-                      <td className={`py-3 font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '未作答'}</td>
-                      <td className={`py-3 text-lg font-bold ${markOpt?.colorClass || ''}`}>{markOpt ? markOpt.symbol : '-'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="p-4 border-t bg-white flex justify-between space-x-3 shrink-0">
-            <button onClick={() => setCurrentPage('quiz')} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 rounded-lg transition">修改答案</button>
-            <button onClick={handleSubmit} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow transition">交卷</button>
-          </div>
+          )}
         </div>
 
-        {/* --- 手機版 UI --- */}
-        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
-          <div className="px-4 py-3 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white shadow-sm z-10">
-            <div className="flex flex-col flex-1 min-w-0 pr-2">
-              <span className="text-[11px] text-gray-400 font-bold">作答檢查</span>
-              <span className="font-bold text-gray-800 text-[15px] truncate w-full mt-0.5">{recordName}</span>
-            </div>
-            <div className="flex gap-2 shrink-0 items-center">
-              {timerMode !== 'none' && (
-                <div className="flex flex-col items-end mr-2 border-r border-gray-200 pr-3">
-                  <span className={`font-mono font-bold text-[13px] ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>
-                    {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
-                  </span>
-                  <button onClick={() => setIsPaused(true)} className="text-[10px] text-blue-600 font-bold mt-0.5">⏸ 暫停</button>
-                </div>
-              )}
-              <button onClick={() => setCurrentPage('quiz')} className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl transition text-xs active:scale-95">修改</button>
-              <button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-xl shadow-[0_4px_10px_rgba(22,163,74,0.3)] transition text-xs active:scale-95">交卷</button>
-            </div>
-          </div>
-
-          <div className="w-full flex flex-row items-center px-4 py-5 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
-            {correctAnswers.map((_, idx) => {
-              const ans = userAnswers[idx];
-              const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
-              return (
-                <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-[85px] h-[105px] shrink-0 rounded-2xl border shadow-sm cursor-pointer active:scale-95 transition-transform ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
-                  <span className="text-xs text-gray-500 mb-1 font-bold">第 {idx + 1} 題</span>
-                  <span className={`text-[28px] font-extrabold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '無'}</span>
-                  <span className={`text-sm mt-1 font-bold ${markOpt?.colorClass || 'text-transparent'}`}>{markOpt ? markOpt.symbol : ' '}</span>
-                </div>
-              );
-            })}
-          </div>
+        <div className="flex-1 overflow-y-auto p-2 sm:p-4">
+          <table className="w-full text-center border-collapse">
+            <thead>
+              <tr className="border-b-2 border-gray-200">
+                <th className="py-2 text-xs sm:text-base text-gray-600">題號</th>
+                <th className="py-2 text-xs sm:text-base text-gray-600">答案</th>
+                <th className="py-2 text-xs sm:text-base text-gray-600">標註</th>
+              </tr>
+            </thead>
+            <tbody>
+              {correctAnswers.map((_, idx) => {
+                const ans = userAnswers[idx];
+                const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
+                return (
+                  <tr key={idx} className={`border-b border-gray-100 ${!ans ? 'bg-red-50' : ''}`}>
+                    <td className="py-2 sm:py-3 font-medium text-sm sm:text-base text-gray-700">{idx + 1}</td>
+                    <td className={`py-2 sm:py-3 font-bold text-sm sm:text-base ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '未作答'}</td>
+                    <td className={`py-2 sm:py-3 text-base sm:text-lg font-bold ${markOpt?.colorClass || ''}`}>{markOpt ? markOpt.symbol : '-'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      </>
+
+        <div className="p-3 sm:p-4 border-t bg-white flex justify-between space-x-3 shrink-0">
+          <button onClick={() => setCurrentPage('quiz')} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 sm:py-3 rounded-lg transition text-sm sm:text-base">修改答案</button>
+          <button onClick={handleSubmit} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 sm:py-3 rounded-lg shadow transition text-sm sm:text-base">交卷</button>
+        </div>
+      </div>
     );
   };
 
@@ -991,113 +875,62 @@ export default function App() {
     const { score, totalScore, details } = resultData;
 
     return (
-      <>
-        {/* --- 電腦版 UI --- */}
-        <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
-          <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative shrink-0">
-             <h2 className="text-lg font-medium opacity-90 truncate">{recordName}</h2>
-             <div className="flex items-baseline justify-center mt-1">
-              <span className="text-4xl font-bold">{score}</span>
-              <span className="text-lg ml-1 opacity-80">/ {totalScore} 分</span>
+      <div className="flex w-full h-full flex-col overflow-hidden bg-white">
+        <div className="p-3 sm:p-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative shrink-0">
+           <h2 className="text-base sm:text-lg font-medium opacity-90 truncate">{recordName}</h2>
+           <div className="flex items-baseline justify-center mt-1">
+            <span className="text-3xl sm:text-4xl font-bold">{score}</span>
+            <span className="text-sm sm:text-lg ml-1 opacity-80">/ {totalScore} 分</span>
+          </div>
+          {timerMode !== 'none' && (
+            <div className="mt-1 sm:mt-2 text-xs sm:text-sm opacity-90 font-mono bg-blue-700/30 inline-block px-3 py-1 rounded-full">
+              總耗時: {formatTime(timeSpent)}
             </div>
-            {timerMode !== 'none' && (
-              <div className="mt-2 text-sm opacity-90 font-mono bg-blue-700/30 inline-block px-3 py-1 rounded-full">
-                總耗時: {formatTime(timeSpent)}
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {details.map(item => (
-              <div key={item.questionNum} className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${item.isCorrect ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
-                <div className="flex items-center space-x-3">
-                  <span className="font-bold text-gray-500 w-8">#{item.questionNum}</span>
-                  <div className="w-6 text-center shrink-0">
-                    {item.markOpt && (
-                      <span className={`text-xl font-bold ${item.markOpt.colorClass}`}>{item.markOpt.symbol}</span>
-                    )}
-                  </div>
-                  <div className="pl-2">
-                    <div className="text-xs text-gray-500 mb-1">您的答案</div>
-                    <div className={`font-bold text-lg ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</div>
-                  </div>
-                </div>
-                {!item.isCorrect && (
-                  <div className="text-right pl-4 border-l border-red-200">
-                    <div className="text-xs text-gray-500 mb-1">正確答案</div>
-                    <div className="font-bold text-lg text-green-600">{item.correctAns}</div>
-                  </div>
-                )}
-                {item.isCorrect && <div className="text-2xl text-green-500 px-4">✓</div>}
-              </div>
-            ))}
-          </div>
-
-          <div className="p-4 border-t bg-white flex space-x-3 shrink-0">
-            <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-3 rounded-lg transition">回列表</button>
-            <button 
-              onClick={() => { resetSetup(); setSetupTab('new'); setCurrentPage('setup'); }}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition"
-            >
-              新測驗
-            </button>
-          </div>
+          )}
         </div>
 
-        {/* --- 手機版 UI --- */}
-        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
-          <div className="px-4 py-3 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white shadow-sm z-10">
-             <div className="flex flex-col flex-1 min-w-0 pr-2">
-               <span className="text-[12px] font-bold text-gray-500 truncate">{recordName}</span>
-               <div className="flex items-baseline mt-0.5">
-                <span className="text-[22px] font-extrabold text-blue-600">{score}</span>
-                <span className="text-xs ml-1 font-bold text-gray-500">/ {totalScore} 分</span>
-              </div>
-              {timerMode !== 'none' && (
-                <div className="text-[10px] mt-0.5 text-gray-400 font-mono font-bold">
-                  耗時: {formatTime(timeSpent)}
-                </div>
-              )}
-             </div>
-             <div className="flex gap-2 shrink-0">
-              <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2.5 rounded-xl transition text-xs active:scale-95">列表</button>
-              <button onClick={() => { resetSetup(); setSetupTab('new'); setCurrentPage('setup'); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-[0_4px_10px_rgba(59,130,246,0.3)] transition text-xs active:scale-95">新測驗</button>
-             </div>
-          </div>
-
-          <div className="w-full flex flex-row items-center px-4 py-5 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
-            {details.map(item => (
-              <div key={item.questionNum} className={`relative overflow-hidden flex flex-col items-center justify-center w-[110px] h-[120px] shrink-0 rounded-2xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <div className="flex w-full px-3 justify-between items-center mb-2 z-10">
-                  <span className="text-xs font-extrabold text-gray-500">#{item.questionNum}</span>
-                  <span className={`text-xs font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
-                </div>
-                
-                <div className="flex items-center justify-center gap-3 z-10">
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] text-gray-400 font-bold mb-0.5">你答</span>
-                    <span className={`text-[22px] font-extrabold ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</span>
-                  </div>
-                  {!item.isCorrect && (
-                    <>
-                      <span className="text-gray-300 text-sm">|</span>
-                      <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-gray-400 font-bold mb-0.5">正確</span>
-                        <span className="text-[22px] font-extrabold text-green-600">{item.correctAns}</span>
-                      </div>
-                    </>
+        <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-2 sm:space-y-3">
+          {details.map(item => (
+            <div key={item.questionNum} className={`p-3 sm:p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${item.isCorrect ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
+              <div className="flex items-center space-x-2 sm:space-x-3">
+                <span className="font-bold text-xs sm:text-base text-gray-500 w-6 sm:w-8">#{item.questionNum}</span>
+                <div className="w-5 sm:w-6 text-center shrink-0">
+                  {item.markOpt && (
+                    <span className={`text-base sm:text-xl font-bold ${item.markOpt.colorClass}`}>{item.markOpt.symbol}</span>
                   )}
                 </div>
+                <div className="pl-1 sm:pl-2">
+                  <div className="text-[10px] sm:text-xs text-gray-500 mb-0.5 sm:mb-1">您的答案</div>
+                  <div className={`font-bold text-base sm:text-lg ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</div>
+                </div>
               </div>
-            ))}
-          </div>
+              {!item.isCorrect && (
+                <div className="text-right pl-3 sm:pl-4 border-l border-red-200">
+                  <div className="text-[10px] sm:text-xs text-gray-500 mb-0.5 sm:mb-1">正確答案</div>
+                  <div className="font-bold text-base sm:text-lg text-green-600">{item.correctAns}</div>
+                </div>
+              )}
+              {item.isCorrect && <div className="text-xl sm:text-2xl text-green-500 px-2 sm:px-4">✓</div>}
+            </div>
+          ))}
         </div>
-      </>
+
+        <div className="p-3 sm:p-4 border-t bg-white flex space-x-3 shrink-0">
+          <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-2 sm:py-3 rounded-lg transition text-sm sm:text-base">回列表</button>
+          <button 
+            onClick={() => { resetSetup(); setSetupTab('new'); setCurrentPage('setup'); }}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 sm:py-3 rounded-lg shadow transition text-sm sm:text-base"
+          >
+            新測驗
+          </button>
+        </div>
+      </div>
     );
   };
 
   return (
-    <div className={`min-h-[100dvh] bg-gray-100 font-sans text-gray-900 relative ${currentPage === 'setup' ? 'flex items-center justify-center p-4' : 'flex flex-col md:flex-row w-screen h-[100dvh] overflow-hidden'}`}>
+    // 注意：改為 flex-row 且強制維持單一行向，這就是強制左右分割的核心基礎
+    <div className={`min-h-[100dvh] bg-gray-100 font-sans text-gray-900 relative ${currentPage === 'setup' ? 'flex items-center justify-center p-4' : 'flex flex-row w-screen h-[100dvh] overflow-hidden'}`}>
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .animate-scale-in { animation: scaleIn 0.2s ease-out forwards; }
@@ -1105,11 +938,28 @@ export default function App() {
       
       {currentPage === 'setup' && renderSetupPage()}
 
+      {/* 【強制橫屏封鎖器】：當進入測驗模式，且螢幕處於直向 (Portrait) 時，全面阻擋並要求旋轉螢幕 */}
+      {currentPage !== 'setup' && (
+        <div className="hidden max-md:portrait:flex fixed inset-0 z-[9999] bg-gray-900 text-white flex-col items-center justify-center p-6 text-center">
+          <div className="text-6xl mb-6 animate-pulse" style={{ transform: 'rotate(-90deg)' }}>📱</div>
+          <h2 className="text-2xl font-bold mb-2">請將手機轉為橫向</h2>
+          <p className="text-gray-400">本測驗系統強制使用橫向顯示，以填滿螢幕左右兩邊，提供最佳且最清晰的作答體驗。</p>
+        </div>
+      )}
+
       {currentPage !== 'setup' && isPaused && renderPausedScreen()}
 
       {currentPage !== 'setup' && !isPaused && (
         <>
-          <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
+          <div 
+            className="flex-1 w-full h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden"
+            // 【安全區填滿】：動態將左側、上下空間推到螢幕邊緣 (填滿瀏海)
+            style={{ 
+              paddingLeft: 'env(safe-area-inset-left)',
+              paddingBottom: 'env(safe-area-inset-bottom)',
+              paddingTop: 'env(safe-area-inset-top)'
+            }}
+          >
             {pdfViewerUrl ? (
               <div className="w-full h-full flex flex-col relative">
                 <iframe src={pdfViewerUrl} className="w-full flex-1 border-none bg-gray-800" title="PDF Viewer" />
@@ -1124,8 +974,14 @@ export default function App() {
           </div>
 
           <div 
-            className="shrink-0 h-auto w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex flex-col relative z-10"
-            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
+            className="shrink-0 bg-white shadow-[-5px_0_20px_rgba(0,0,0,0.1)] flex flex-col relative z-10 border-l border-gray-200"
+            // 【比例優化與安全區】：右方面板的寬度動態抓 45vw (最寬 400px)，且將內部內容閃避右側安全區，呈現完美比例
+            style={{ 
+              width: 'calc(min(400px, 45vw) + env(safe-area-inset-right))',
+              paddingRight: 'env(safe-area-inset-right)',
+              paddingBottom: 'env(safe-area-inset-bottom)',
+              paddingTop: 'env(safe-area-inset-top)'
+            }}
           >
             {currentPage === 'quiz' && renderQuizPage()}
             {currentPage === 'review' && renderReviewPage()}
