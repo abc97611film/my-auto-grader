@@ -1126,7 +1126,7 @@ export default function App() {
             ) : (
               <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
                 <span className="text-4xl mb-4">📄</span>
-                <p className="mb-2 font-bold text-lg text-white">尚未綁定題目 PDF</p>
+                <p className="mb-2 font-bold text-lg text-white">尚未上傳題目 PDF</p>
                 <p className="mb-6 text-sm text-gray-400">尚未上傳題目 PDF，請至作答紀錄中修改上傳</p>
               </div>
             )}
