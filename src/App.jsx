@@ -815,35 +815,35 @@ export default function App() {
         </div>
 
         {/* --- 手機版 UI --- */}
-        <div className="flex lg:hidden w-full flex-col bg-white">
-          <div className="px-3 py-1.5 flex justify-between items-center shrink-0 border-b border-gray-200 bg-gray-50">
+        <div className="flex lg:hidden w-full flex-col bg-[#F8F9FA]">
+          <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="font-bold text-black text-sm flex items-center">
               <span>第</span>
               <select 
                 value={currentQuestionIndex} 
                 onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} 
-                className="mx-1 p-0 bg-transparent outline-none text-black font-bold appearance-none underline decoration-gray-400 text-center text-lg"
+                className="mx-1 p-0 bg-transparent outline-none text-black font-bold appearance-none underline decoration-gray-400 text-center"
               >
                 {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
               </select>
-              <span>題 / {correctAnswers.length}</span>
+              <span>題 / {correctAnswers.length}題</span>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center">
               {timerMode !== 'none' && (
-                <div className="flex items-center gap-2 mr-2 border-r border-gray-300 pr-3">
-                  <span className={`font-mono font-bold text-lg ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>
+                <div className="flex flex-col items-end mr-3 border-r border-gray-200 pr-3">
+                  <span className={`font-mono font-bold text-sm ${timerMode === 'down' && timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
                     {timerMode === 'down' ? formatTime(timeRemaining) : formatTime(timeSpent)}
                   </span>
-                  <button onClick={() => setIsPaused(true)} className="bg-gray-200 hover:bg-gray-300 text-blue-700 px-3 py-1 rounded-md font-bold text-sm active:scale-95 transition-transform shadow-sm">⏸ 暫停</button>
+                  <button onClick={() => setIsPaused(true)} className="text-[10px] text-blue-600 font-bold mt-0.5">⏸ 暫停</button>
                 </div>
               )}
               <button 
                 onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
-                className="flex items-center justify-center w-8 h-8 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
+                className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
                 title="回首頁"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                   <polyline points="9 22 9 12 15 12 15 22"></polyline>
                 </svg>
@@ -851,38 +851,36 @@ export default function App() {
             </div>
           </div>
           
-          <div className="w-full flex flex-row items-center justify-between px-2 py-2 bg-[#F8F9FA] shrink-0 border-t border-gray-200 overflow-x-auto [&::-webkit-scrollbar]:hidden" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}>
+          {/* 作答區高度限制為 65px */}
+          <div className="w-full h-[65px] flex flex-row items-center justify-between px-1.5 bg-[#F8F9FA] shrink-0 border-t border-gray-200 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             
-            {/* 左側：看標註 + Ｏ Ｘ △ ？ (靠左) */}
-            <div className="flex-1 flex flex-row items-center justify-start gap-2 shrink-0">
-              <button onClick={() => setShowMarksModal(true)} className="w-[85px] h-[60px] flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-xl shadow-sm active:scale-95 transition-transform text-[15px] shrink-0">
+            {/* 左側：看標註、Ｏ、Ｘ、△、？ 靠左 */}
+            <div className="shrink-0 flex flex-row items-center justify-start gap-1">
+              <button onClick={() => setShowMarksModal(true)} className="w-[65px] h-[50px] flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 text-[12px] font-bold rounded-lg shadow-sm active:scale-95 transition-transform shrink-0">
                 看標註
               </button>
-              
-              <div className="flex flex-row items-center gap-1.5 shrink-0">
-                {MARK_OPTIONS.map(mark => (
-                  <button 
-                    key={mark.id} 
-                    onClick={() => handleToggleMark(mark.id)} 
-                    className={`w-[32px] h-[40px] flex items-center justify-center text-[26px] leading-none font-bold transition-all active:scale-90 bg-transparent border-none shrink-0 ${
-                      marks[currentQuestionIndex] === mark.id 
-                      ? 'scale-125 drop-shadow-md opacity-100 ' + mark.colorClass 
-                      : 'opacity-40 grayscale hover:opacity-100 hover:grayscale-0 ' + mark.colorClass
-                    }`}
-                  >
-                    {mark.symbol}
-                  </button>
-                ))}
-              </div>
+              {MARK_OPTIONS.map(mark => (
+                <button 
+                  key={mark.id} 
+                  onClick={() => handleToggleMark(mark.id)} 
+                  className={`w-[26px] h-[50px] flex items-center justify-center text-[20px] leading-none font-bold transition-all active:scale-90 bg-transparent border-none shrink-0 ${
+                    marks[currentQuestionIndex] === mark.id 
+                    ? 'scale-125 drop-shadow-md opacity-100 ' + mark.colorClass 
+                    : 'opacity-40 grayscale hover:opacity-100 hover:grayscale-0 ' + mark.colorClass
+                  }`}
+                >
+                  {mark.symbol}
+                </button>
+              ))}
             </div>
 
-            {/* 中間：選項 (置中) */}
-            <div className="shrink-0 flex flex-row items-center justify-center gap-1.5 px-3">
+            {/* 中間：選項置中 */}
+            <div className="flex-1 flex flex-row items-center justify-center gap-1.5 px-1 shrink-0">
               {options.map(opt => (
                 <button 
                   key={opt} 
                   onClick={() => handleSelectAnswer(opt)} 
-                  className={`w-[45px] h-[60px] sm:w-[50px] sm:h-[65px] rounded-xl text-2xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
+                  className={`w-[40px] h-[50px] rounded-xl text-xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
                     userAnswers[currentQuestionIndex] === opt 
                     ? 'bg-[#3B82F6] text-white border-none scale-105' 
                     : 'bg-white text-gray-700 border-2 border-gray-200'
@@ -893,13 +891,12 @@ export default function App() {
               ))}
             </div>
 
-            {/* 右側：交卷/下一題 (靠右) */}
-            <div className="flex-1 flex flex-row items-center justify-end shrink-0">
-              <button onClick={handleNext} className="w-[85px] h-[60px] flex items-center justify-center bg-[#3B82F6] hover:bg-blue-600 text-white font-bold rounded-xl shadow-sm transition-transform active:scale-95 text-[15px] shrink-0">
+            {/* 右側：交卷靠右 */}
+            <div className="shrink-0 flex items-center justify-end">
+              <button onClick={handleNext} className="w-[65px] h-[50px] flex items-center justify-center bg-[#3B82F6] hover:bg-blue-600 text-white font-bold rounded-lg shadow-sm transition-transform active:scale-95 text-[12px] whitespace-nowrap shrink-0">
                 {isLastQuestion ? '交卷' : '下一題'}
               </button>
             </div>
-
           </div>
         </div>
       </>
