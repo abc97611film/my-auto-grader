@@ -59,6 +59,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [pdfUrl, setPdfUrl] = useState(null);
+  const [pdfViewerUrl, setPdfViewerUrl] = useState(null); // 存放自訂 PDF 渲染器的 Blob URL
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -193,6 +194,84 @@ export default function App() {
     return () => clearInterval(interval);
   }, [currentPage, currentRecordId, db, user]);
 
+  // 【核心功能】將 Base64 PDF 轉換為內嵌的 PDF.js 閱讀器 HTML Blob
+  useEffect(() => {
+    if (!pdfUrl) {
+      setPdfViewerUrl(null);
+      return;
+    }
+    if (pdfUrl.startsWith('data:application/pdf')) {
+      const base64Data = pdfUrl.split(',')[1];
+      const html = `
+        <!DOCTYPE html>
+        <html lang="zh-TW">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0">
+          <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+          <style>
+            body { margin: 0; padding: 10px 0; background: #374151; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+            .page-container { margin-bottom: 12px; width: 96%; max-width: 800px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); background: white; border-radius: 4px; overflow: hidden; }
+            canvas { width: 100% !important; height: auto !important; display: block; }
+            #loading { color: #D1D5DB; margin-top: 40px; font-family: sans-serif; font-size: 15px; font-weight: bold; text-align: center; line-height: 1.5; }
+            .spinner { margin: 10px auto; width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s ease-in-out infinite; }
+            @keyframes spin { to { transform: rotate(360deg); } }
+          </style>
+        </head>
+        <body>
+          <div id="loading">
+            <div class="spinner"></div>
+            處理 PDF 中...<br><span style="font-size: 12px; font-weight: normal; opacity: 0.8">這可能會花費幾秒鐘</span>
+          </div>
+          <div id="container" style="width: 100%; display: flex; flex-direction: column; align-items: center;"></div>
+          <script>
+            try {
+              pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+              const base64 = "${base64Data}";
+              const binary = atob(base64);
+              const array = new Uint8Array(binary.length);
+              for(let i=0; i<binary.length; i++) array[i] = binary.charCodeAt(i);
+
+              const container = document.getElementById('container');
+              const loading = document.getElementById('loading');
+
+              pdfjsLib.getDocument({data: array}).promise.then(pdf => {
+                loading.style.display = 'none';
+                for(let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                  const wrapper = document.createElement('div');
+                  wrapper.className = 'page-container';
+                  container.appendChild(wrapper); // 依序建立每一頁的佔位容器
+
+                  pdf.getPage(pageNum).then(page => {
+                    const viewport = page.getViewport({scale: 2.0}); // 放大倍率確保手機上文字清晰
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    wrapper.appendChild(canvas);
+                    page.render({canvasContext: ctx, viewport: viewport});
+                  });
+                }
+              }).catch(err => {
+                loading.innerHTML = '載入失敗 ❌<br><span style="font-size: 12px; font-weight: normal;">檔案可能已損毀或無法解析</span>';
+                console.error(err);
+              });
+            } catch (e) {
+              document.getElementById('loading').innerHTML = '環境不支援 ❌';
+            }
+          </script>
+        </body>
+        </html>
+      `;
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      setPdfViewerUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setPdfViewerUrl(pdfUrl);
+    }
+  }, [pdfUrl]);
+
   const handleGoogleLogin = async () => {
     if (!auth) return;
     const provider = new GoogleAuthProvider();
@@ -234,7 +313,6 @@ export default function App() {
     timerRef.current = { timeSpent: 0, timeRemaining: 0 };
   };
 
-  // 讀取 PDF 轉換為 Base64
   const handlePdfUpload = (e) => {
     const file = e.target.files[0];
     if (file && file.type === 'application/pdf') {
@@ -256,29 +334,6 @@ export default function App() {
         setIsUploadingPdf(false);
       };
       reader.readAsDataURL(file);
-    }
-  };
-
-  // 在新分頁或外部應用程式中強制完整開啟 PDF
-  const handleOpenPdf = () => {
-    if (!pdfUrl) return;
-    try {
-      if (pdfUrl.startsWith('data:application/pdf')) {
-        const base64 = pdfUrl.split(',')[1];
-        const binary = atob(base64);
-        const array = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          array[i] = binary.charCodeAt(i);
-        }
-        const blob = new Blob([array], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-      } else {
-        window.open(pdfUrl, '_blank');
-      }
-    } catch (error) {
-      console.error("開啟 PDF 失敗:", error);
-      alert("無法開啟 PDF，請確認檔案格式是否正確。");
     }
   };
 
@@ -1063,16 +1118,10 @@ export default function App() {
       {currentPage !== 'setup' && !isPaused && (
         <>
           <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
-            {pdfUrl ? (
+            {pdfViewerUrl ? (
               <div className="w-full h-full flex flex-col relative">
-                {/* 加入手機版專用的強制開啟 PDF 按鈕 */}
-                <div className="md:hidden bg-gray-900 border-b border-gray-700 p-2 flex justify-between items-center shrink-0 z-10 shadow-md">
-                  <span className="text-xs text-gray-300 font-medium">手機若無法翻頁請點擊右方 ➡️</span>
-                  <button onClick={handleOpenPdf} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow transition">
-                    獨立開啟 PDF
-                  </button>
-                </div>
-                <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full flex-1 border-none bg-white" title="PDF Viewer" />
+                {/* 植入自訂 PDF 引擎，完全解決手機無法捲動多頁的問題 */}
+                <iframe src={pdfViewerUrl} className="w-full flex-1 border-none bg-gray-800" title="PDF Viewer" />
               </div>
             ) : (
               <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
