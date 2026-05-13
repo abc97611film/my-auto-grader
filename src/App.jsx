@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
@@ -18,7 +17,7 @@ const getFirebaseConfig = () => {
   };
 };
 
-let app, auth, db, storage;
+let app, auth, db;
 try {
   const config = getFirebaseConfig();
   if (config && config.apiKey) {
@@ -27,7 +26,6 @@ try {
     db = initializeFirestore(app, {
       localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
     });
-    storage = getStorage(app);
   } else {
     console.warn("尚未設定 Firebase Config，本地端將無法使用雲端儲存功能。");
   }
@@ -154,7 +152,7 @@ export default function App() {
     }
   }, [timeRemaining, timerMode, currentPage, isPaused, db, user, currentRecordId]);
 
-  // 主要作答進度存檔 (不包含秒數跳動頻繁寫入)
+  // 主要作答進度存檔 (包含 Base64 PDF 字串)
   useEffect(() => {
     if ((currentPage === 'quiz' || currentPage === 'review') && currentRecordId && db && user) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
@@ -179,7 +177,7 @@ export default function App() {
     }
   }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName, timerMode, timeLimit, pdfUrl]);
 
-  // 每 10 秒儲存一次時間狀態，防止重新整理流失過多紀錄
+  // 每 10 秒儲存一次時間狀態
   useEffect(() => {
     let interval = null;
     if ((currentPage === 'quiz' || currentPage === 'review') && currentRecordId && db && user) {
@@ -236,38 +234,29 @@ export default function App() {
     timerRef.current = { timeSpent: 0, timeRemaining: 0 };
   };
 
+  // 改寫為 FileReader (Base64) 模式
   const handlePdfUpload = (e) => {
     const file = e.target.files[0];
     if (file && file.type === 'application/pdf') {
-      if (!storage || !user) {
-        setSetupError('請先等待雲端連線完成後，再上傳題目檔案。');
+      // Firestore 單筆資料限制 1MB，Base64 膨脹後會變大，限制原始檔案在 700KB 內
+      if (file.size > 700 * 1024) {
+        setSetupError('為配合免費資料庫限制，PDF 檔案大小不能超過 700KB。請先壓縮考卷檔案。');
         return;
       }
+
       setIsUploadingPdf(true);
       setSetupError('');
-      
-      const fileRef = ref(storage, `artifacts/${currentAppId}/users/${user.uid}/pdfs/${Date.now()}_${file.name}`);
-      const uploadTask = uploadBytesResumable(fileRef, file);
-      
-      uploadTask.on('state_changed', 
-        null,
-        (error) => {
-          console.error("PDF 上傳失敗:", error);
-          setSetupError('PDF 上傳失敗，請確認網路連線。');
-          setIsUploadingPdf(false);
-        },
-        async () => {
-          try {
-            const url = await getDownloadURL(uploadTask.snapshot.ref);
-            setPdfUrl(url);
-            setIsUploadingPdf(false);
-          } catch(err) {
-            console.error("取得 PDF 網址失敗:", err);
-            setSetupError('取得 PDF 網址失敗。');
-            setIsUploadingPdf(false);
-          }
-        }
-      );
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPdfUrl(reader.result); // 將 PDF 轉為 Base64 字串直接存入狀態
+        setIsUploadingPdf(false);
+      };
+      reader.onerror = () => {
+        setSetupError('PDF 檔案讀取失敗，請重試。');
+        setIsUploadingPdf(false);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -510,7 +499,7 @@ export default function App() {
           </div>
           
           <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 直接綁定雲端紀錄 (選填)</label>
+            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 綁定紀錄 (免開 Storage 版)</label>
             <input 
               type="file" 
               accept="application/pdf"
@@ -518,8 +507,8 @@ export default function App() {
               disabled={isUploadingPdf}
               className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer disabled:opacity-50"
             />
-            {isUploadingPdf && <span className="text-xs text-blue-600 mt-2 block font-bold animate-pulse">⏳ PDF 上傳中... 請稍候</span>}
-            {!isUploadingPdf && pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 已成功上傳並綁定</span>}
+            {isUploadingPdf && <span className="text-xs text-blue-600 mt-2 block font-bold animate-pulse">⏳ PDF 轉換中... 請稍候</span>}
+            {!isUploadingPdf && pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 已成功轉換並綁定</span>}
           </div>
 
           <div>
