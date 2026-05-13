@@ -59,7 +59,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [pdfUrl, setPdfUrl] = useState(null);
-  const [pdfViewerUrl, setPdfViewerUrl] = useState(null); // 存放自訂 PDF 渲染器的 Blob URL
+  const [pdfViewerUrl, setPdfViewerUrl] = useState(null); 
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -70,7 +70,6 @@ export default function App() {
   const [rawAnswers, setRawAnswers] = useState('');
   const [correctAnswers, setCorrectAnswers] = useState([]);
 
-  // 計時器相關狀態
   const [timerMode, setTimerMode] = useState('none'); 
   const [timeLimit, setTimeLimit] = useState(''); 
   const [timeSpent, setTimeSpent] = useState(0); 
@@ -86,7 +85,6 @@ export default function App() {
   const [feedbackModal, setFeedbackModal] = useState({ isOpen: false, isCorrect: false, correctAnswer: '' });
   const [showMarksModal, setShowMarksModal] = useState(false);
 
-  // 【核心機制】：強迫 iOS/Android 網頁啟用「滿版安全區」渲染
   useEffect(() => {
     let meta = document.querySelector("meta[name=viewport]");
     if (!meta) {
@@ -134,12 +132,10 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // 更新 timerRef，供獨立存檔使用以避免過度寫入
   useEffect(() => {
     timerRef.current = { timeSpent, timeRemaining };
   }, [timeSpent, timeRemaining]);
 
-  // 計時器邏輯
   useEffect(() => {
     let interval = null;
     if ((currentPage === 'quiz' || currentPage === 'review') && !isPaused && timerMode !== 'none') {
@@ -153,7 +149,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [currentPage, isPaused, timerMode]);
 
-  // 倒計時自動交卷機制
   useEffect(() => {
     if (timerMode === 'down' && timeRemaining === 0 && (currentPage === 'quiz' || currentPage === 'review') && !isPaused) {
       if (db && user && currentRecordId) {
@@ -164,7 +159,6 @@ export default function App() {
     }
   }, [timeRemaining, timerMode, currentPage, isPaused, db, user, currentRecordId]);
 
-  // 主要作答進度存檔 (包含 Base64 PDF 字串)
   useEffect(() => {
     if ((currentPage === 'quiz' || currentPage === 'review') && currentRecordId && db && user) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
@@ -189,7 +183,6 @@ export default function App() {
     }
   }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName, timerMode, timeLimit, pdfUrl]);
 
-  // 每 10 秒儲存一次時間狀態
   useEffect(() => {
     let interval = null;
     if ((currentPage === 'quiz' || currentPage === 'review') && currentRecordId && db && user) {
@@ -205,7 +198,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [currentPage, currentRecordId, db, user]);
 
-  // 【核心功能】將 Base64 PDF 轉換為內嵌的 PDF.js 閱讀器 HTML Blob
   useEffect(() => {
     if (!pdfUrl) {
       setPdfViewerUrl(null);
@@ -218,11 +210,11 @@ export default function App() {
         <html lang="zh-TW">
         <head>
           <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0, viewport-fit=cover">
           <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
           <style>
-            body { margin: 0; padding: 10px 0; background: #374151; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
-            .page-container { margin-bottom: 12px; width: 96%; max-width: 800px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); background: white; border-radius: 4px; overflow: hidden; }
+            body { margin: 0; padding: 0; background: #374151; display: flex; flex-direction: column; align-items: center; min-height: 100vh; overflow-x: hidden; }
+            .page-container { margin-bottom: 8px; width: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.5); background: white; }
             canvas { width: 100% !important; height: auto !important; display: block; }
             #loading { color: #D1D5DB; margin-top: 40px; font-family: sans-serif; font-size: 15px; font-weight: bold; text-align: center; line-height: 1.5; }
             .spinner { margin: 10px auto; width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s ease-in-out infinite; }
@@ -251,10 +243,10 @@ export default function App() {
                 for(let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                   const wrapper = document.createElement('div');
                   wrapper.className = 'page-container';
-                  container.appendChild(wrapper); // 依序建立每一頁的佔位容器
+                  container.appendChild(wrapper);
 
                   pdf.getPage(pageNum).then(page => {
-                    const viewport = page.getViewport({scale: 2.0}); // 放大倍率確保手機上文字清晰
+                    const viewport = page.getViewport({scale: 2.5}); 
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     canvas.height = viewport.height;
@@ -331,7 +323,6 @@ export default function App() {
         setSetupError('為配合免費資料庫限制，PDF 檔案大小不能超過 700KB。請先壓縮考卷檔案。');
         return;
       }
-
       setIsUploadingPdf(true);
       setSetupError('');
 
@@ -762,7 +753,7 @@ export default function App() {
     return (
       <>
         {/* --- 電腦版 UI --- */}
-        <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
+        <div className="hidden lg:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
                <span className="text-sm font-bold text-blue-600 mb-1 leading-tight break-words">
@@ -824,7 +815,7 @@ export default function App() {
         </div>
 
         {/* --- 手機版 UI --- */}
-        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
+        <div className="flex lg:hidden w-full flex-col bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="font-bold text-black text-sm flex items-center">
               <span>第</span>
@@ -888,7 +879,7 @@ export default function App() {
               </button>
             </div>
 
-            <div className="flex-1 flex flex-row items-center justify-center gap-2 px-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            <div className="flex-1 flex flex-row items-center justify-center gap-2 sm:gap-3 px-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
               {options.map(opt => (
                 <button 
                   key={opt} 
@@ -919,7 +910,7 @@ export default function App() {
     return (
       <>
         {/* --- 電腦版 UI --- */}
-        <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
+        <div className="hidden lg:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 flex justify-between items-center shrink-0">
             <div className="text-left">
               <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
@@ -967,7 +958,7 @@ export default function App() {
         </div>
 
         {/* --- 手機版 UI --- */}
-        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
+        <div className="flex lg:hidden w-full flex-col bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
               <span className="text-xs text-gray-400">作答檢查</span>
@@ -1012,7 +1003,7 @@ export default function App() {
     return (
       <>
         {/* --- 電腦版 UI --- */}
-        <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
+        <div className="hidden lg:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative shrink-0">
              <h2 className="text-lg font-medium opacity-90 truncate">{recordName}</h2>
              <div className="flex items-baseline justify-center mt-1">
@@ -1064,7 +1055,7 @@ export default function App() {
         </div>
 
         {/* --- 手機版 UI --- */}
-        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
+        <div className="flex lg:hidden w-full flex-col bg-[#F8F9FA]">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
              <div className="flex flex-col flex-1 min-w-0 pr-2">
                <span className="text-xs text-gray-500 truncate">{recordName}</span>
@@ -1116,7 +1107,7 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-[100dvh] bg-gray-100 font-sans text-gray-900 relative ${currentPage === 'setup' ? 'flex items-center justify-center p-4' : 'flex flex-col md:flex-row w-screen h-[100dvh] overflow-hidden'}`}>
+    <div className={`min-h-[100dvh] bg-gray-100 font-sans text-gray-900 relative ${currentPage === 'setup' ? 'flex items-center justify-center p-4' : 'flex flex-col lg:flex-row w-screen h-[100dvh] overflow-hidden'}`}>
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .animate-scale-in { animation: scaleIn 0.2s ease-out forwards; }
@@ -1124,9 +1115,9 @@ export default function App() {
       
       {currentPage === 'setup' && renderSetupPage()}
 
-      {/* 【強制橫屏封鎖器】：當進入測驗模式，且螢幕處於直向 (Portrait) 時，全面阻擋並要求旋轉螢幕 */}
+      {/* 【強制橫向封鎖器】：直向時強制擋住畫面要求翻轉 */}
       {currentPage !== 'setup' && (
-        <div className="hidden max-md:portrait:flex fixed inset-0 z-[9999] bg-gray-900 text-white flex-col items-center justify-center p-6 text-center">
+        <div className="hidden max-lg:portrait:flex fixed inset-0 z-[9999] bg-gray-900 text-white flex-col items-center justify-center p-6 text-center">
           <div className="text-6xl mb-6 animate-pulse" style={{ transform: 'rotate(-90deg)' }}>📱</div>
           <h2 className="text-2xl font-bold mb-2">請將手機轉為橫向</h2>
           <p className="text-gray-400">本測驗系統強制使用橫向顯示，以提供最佳作答體驗。</p>
@@ -1138,7 +1129,7 @@ export default function App() {
       {currentPage !== 'setup' && !isPaused && (
         <>
           <div 
-            className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden"
+            className="flex-1 w-full lg:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden"
             style={{ paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}
           >
             {pdfViewerUrl ? (
@@ -1155,7 +1146,7 @@ export default function App() {
           </div>
 
           <div 
-            className="shrink-0 h-auto max-h-[50dvh] w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
+            className="shrink-0 h-auto max-h-[50dvh] w-full lg:max-h-none lg:h-full lg:w-[400px] lg:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] lg:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
             style={{ paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
           >
             {currentPage === 'quiz' && renderQuizPage()}
@@ -1180,7 +1171,7 @@ export default function App() {
 
       {showMarksModal && (
         <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-40 transition-opacity">
-          <div className="bg-white w-full md:w-[400px] md:relative md:rounded-xl md:mb-10 max-h-[60%] rounded-t-2xl flex flex-col mx-auto shadow-2xl">
+          <div className="bg-white w-full lg:w-[400px] lg:relative lg:rounded-xl lg:mb-10 max-h-[60%] rounded-t-2xl flex flex-col mx-auto shadow-2xl" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
             <div className="p-4 border-b flex justify-between items-center">
               <h3 className="text-lg font-bold">有標註的題目</h3>
               <button onClick={() => setShowMarksModal(false)} className="text-gray-500 text-xl font-bold p-2">&times;</button>
