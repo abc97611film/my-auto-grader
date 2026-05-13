@@ -1130,7 +1130,6 @@ export default function App() {
         <>
           <div 
             className="flex-1 w-full lg:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden"
-            // 已徹底移除左右 padding
           >
             {pdfViewerUrl ? (
               <div className="w-full h-full flex flex-col relative">
@@ -1147,8 +1146,6 @@ export default function App() {
 
           <div 
             className="shrink-0 h-auto max-h-[50dvh] w-full lg:max-h-none lg:h-full lg:w-[400px] lg:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] lg:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
-            // 保留底部安全區防誤觸，移除左右 padding
-            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
           >
             {currentPage === 'quiz' && renderQuizPage()}
             {currentPage === 'review' && renderReviewPage()}
@@ -1172,7 +1169,7 @@ export default function App() {
 
       {showMarksModal && (
         <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-40 transition-opacity">
-          <div className="bg-white w-full lg:w-[400px] lg:relative lg:rounded-xl lg:mb-10 max-h-[60%] rounded-t-2xl flex flex-col mx-auto shadow-2xl" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div className="bg-white w-full lg:w-[400px] lg:relative lg:rounded-xl lg:mb-10 max-h-[60%] rounded-t-2xl flex flex-col mx-auto shadow-2xl">
             <div className="p-4 border-b flex justify-between items-center">
               <h3 className="text-lg font-bold">有標註的題目</h3>
               <button onClick={() => setShowMarksModal(false)} className="text-gray-500 text-xl font-bold p-2">&times;</button>
