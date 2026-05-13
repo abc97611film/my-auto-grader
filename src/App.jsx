@@ -221,7 +221,7 @@ export default function App() {
         <body>
           <div id="loading">
             <div class="spinner"></div>
-            處理 PDF 中...<br><span style="font-size: 12px; font-weight: normal; opacity: 0.8">這可能會花費幾秒鐘</span>
+            處理 PDF 中...<br><span style="font-size: 12px; font-weight: normal; opacity: 0.8">這可能會需要幾秒鐘</span>
           </div>
           <div id="container" style="width: 100%; display: flex; flex-direction: column; align-items: center;"></div>
           <script>
@@ -573,7 +573,7 @@ export default function App() {
           </div>
           
           <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 綁定紀錄 (免開 Storage 版)</label>
+            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 檔</label>
             <input 
               type="file" 
               accept="application/pdf"
@@ -582,7 +582,7 @@ export default function App() {
               className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer disabled:opacity-50"
             />
             {isUploadingPdf && <span className="text-xs text-blue-600 mt-2 block font-bold animate-pulse">⏳ PDF 轉換中... 請稍候</span>}
-            {!isUploadingPdf && pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 已成功轉換並綁定</span>}
+            {!isUploadingPdf && pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 已成功上傳</span>}
           </div>
 
           <div>
@@ -1127,7 +1127,7 @@ export default function App() {
               <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
                 <span className="text-4xl mb-4">📄</span>
                 <p className="mb-2 font-bold text-lg text-white">尚未綁定題目 PDF</p>
-                <p className="mb-6 text-sm text-gray-400">測驗已開始，本區域僅顯示由雲端綁定的題庫</p>
+                <p className="mb-6 text-sm text-gray-400">尚未上傳題目 PDF，請至作答紀錄中修改上傳</p>
               </div>
             )}
           </div>
