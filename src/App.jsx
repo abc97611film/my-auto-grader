@@ -816,7 +816,7 @@ export default function App() {
 
         {/* --- 手機版 UI --- */}
         <div className="flex lg:hidden w-full flex-col bg-white">
-          <div className="px-3 py-1.5 flex justify-between items-center shrink-0 border-b border-gray-200 bg-gray-50">
+          <div className="px-3 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-gray-50">
             <div className="font-bold text-black text-sm flex items-center">
               <span>第</span>
               <select 
@@ -851,15 +851,17 @@ export default function App() {
             </div>
           </div>
           
-          <div className="w-full flex flex-row items-center px-2 py-2 gap-3 bg-[#F8F9FA] overflow-x-auto [&::-webkit-scrollbar]:hidden shrink-0">
-            {/* 標註與看標註 */}
-            <div className="flex flex-row items-center gap-4 shrink-0 border-r border-gray-300 pr-3">
-              <div className="flex flex-row items-center gap-3">
+          {/* 作答區：單一橫排佈局 (左：標註區，中：選項，右：交卷) */}
+          <div className="w-full flex flex-row items-center justify-between px-2 py-2 bg-[#F8F9FA] shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            
+            {/* 左側：標註及看標註按鈕 */}
+            <div className="flex-1 flex flex-col items-start justify-center gap-1 min-w-0 pr-1">
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1">
                 {MARK_OPTIONS.map(mark => (
                   <button 
                     key={mark.id} 
                     onClick={() => handleToggleMark(mark.id)} 
-                    className={`text-[24px] leading-none font-bold transition-all active:scale-90 ${
+                    className={`text-[20px] sm:text-[22px] leading-none font-bold transition-all active:scale-90 bg-transparent ${
                       marks[currentQuestionIndex] === mark.id 
                       ? 'scale-125 drop-shadow-md opacity-100 ' + mark.colorClass 
                       : 'opacity-40 grayscale hover:opacity-100 hover:grayscale-0 ' + mark.colorClass
@@ -869,18 +871,18 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              <button onClick={() => setShowMarksModal(true)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold py-2 px-3 rounded-lg shadow-sm active:scale-95 transition-transform">
+              <button onClick={() => setShowMarksModal(true)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-[10px] font-bold py-1 px-2 rounded-md shadow-sm active:scale-95 transition-transform mt-1">
                 看標註
               </button>
             </div>
 
-            {/* 選項區 */}
-            <div className="flex flex-row items-center gap-2 shrink-0">
+            {/* 中間：選項置中 */}
+            <div className="shrink-0 flex flex-row items-center justify-center gap-1.5 px-1">
               {options.map(opt => (
                 <button 
                   key={opt} 
                   onClick={() => handleSelectAnswer(opt)} 
-                  className={`w-[48px] h-[54px] rounded-xl text-2xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
+                  className={`w-[42px] h-[55px] sm:w-[48px] sm:h-[60px] rounded-xl text-2xl font-extrabold flex items-center justify-center transition-all shrink-0 shadow-sm active:scale-95 ${
                     userAnswers[currentQuestionIndex] === opt 
                     ? 'bg-[#3B82F6] text-white border-none' 
                     : 'bg-white text-gray-700 border-2 border-gray-200'
@@ -891,9 +893,9 @@ export default function App() {
               ))}
             </div>
 
-            {/* 下一題 */}
-            <div className="shrink-0 flex items-center ml-1">
-              <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold h-[54px] px-5 rounded-xl shadow-sm transition whitespace-nowrap text-base active:scale-95">
+            {/* 右側：交卷靠右 */}
+            <div className="flex-1 flex justify-end items-center min-w-0 pl-1">
+              <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold h-[55px] sm:h-[60px] px-3 sm:px-4 rounded-xl shadow-sm transition whitespace-nowrap text-sm sm:text-base active:scale-95">
                 {isLastQuestion ? '交卷' : '下一題'}
               </button>
             </div>
