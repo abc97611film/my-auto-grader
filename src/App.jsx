@@ -1115,7 +1115,7 @@ export default function App() {
             className="shrink-0 h-auto max-h-[50dvh] w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
             style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           >
-            {currentPage === 'quiz'}
+            {currentPage === 'quiz' && renderQuizPage()}
             {currentPage === 'review' && renderReviewPage()}
             {currentPage === 'result' && renderResultPage()}
           </div>
