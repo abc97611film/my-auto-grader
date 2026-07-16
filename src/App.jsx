@@ -58,12 +58,12 @@ export default function App() {
   const [records, setRecords] = useState([]);
   const [setupTab, setSetupTab] = useState('new');
   const [currentRecordId, setCurrentRecordId] = useState(null);
-  const [editingRecordId, setEditingRecordId] = useState(null); // 新增：正在修改設定的紀錄 ID
+  const [editingRecordId, setEditingRecordId] = useState(null);
   const [recordName, setRecordName] = useState('');
   const [deleteModalId, setDeleteModalId] = useState(null);
   const [authError, setAuthError] = useState('');
 
-  const [pdfUrl, setPdfUrl] = useState(null); // 存放 Base64 字串或 Object URL
+  const [pdfUrl, setPdfUrl] = useState(null);
 
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -80,10 +80,10 @@ export default function App() {
   const [specialRules, setSpecialRules] = useState({});
 
   // --- 計時與暫停相關狀態 ---
-  const [timerMode, setTimerMode] = useState('up'); // 'up' 正計時, 'down' 倒計時
-  const [timeLimitMinutes, setTimeLimitMinutes] = useState(''); // 倒計時限（分鐘）
+  const [timerMode, setTimerMode] = useState('up'); 
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState(''); 
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [isPaused, setIsPaused] = useState(false); // 新增：暫停作答狀態
+  const [isPaused, setIsPaused] = useState(false); 
   const elapsedTimeRef = useRef(0); 
 
   const [setupError, setSetupError] = useState('');
@@ -128,7 +128,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // --- 計時器核心邏輯（包含倒計時強制交卷與暫停鎖定） ---
+  // --- 計時器核心邏輯 ---
   useEffect(() => {
     let timer;
     if ((currentPage === 'quiz' || currentPage === 'review') && !isPaused) {
@@ -136,7 +136,6 @@ export default function App() {
         elapsedTimeRef.current += 1;
         setElapsedTime(elapsedTimeRef.current);
 
-        // 如果是倒計時模式，檢查是否時間到
         if (timerMode === 'down' && timeLimitMinutes) {
           const totalLimitSeconds = parseInt(timeLimitMinutes, 10) * 60;
           if (elapsedTimeRef.current >= totalLimitSeconds) {
@@ -150,7 +149,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [currentPage, isPaused, timerMode, timeLimitMinutes]);
 
-  // --- 計算畫面上要顯示的秒數（正計時顯示已過時間，倒計時顯示剩餘時間） ---
   const displaySeconds = useMemo(() => {
     if (timerMode === 'down' && timeLimitMinutes) {
       const totalLimitSeconds = parseInt(timeLimitMinutes, 10) * 60;
@@ -175,7 +173,7 @@ export default function App() {
         specialRules,
         timerMode,
         timeLimitMinutes,
-        pdfUrl, // 永久儲存雲端題目 Base64 資料
+        pdfUrl, 
         elapsedTime: elapsedTimeRef.current,
         currentQuestionIndex,
         status: 'in-progress',
@@ -210,13 +208,12 @@ export default function App() {
     }
   };
 
-  // --- 讀取檔案並直接轉換成雲端 Base64 永久綁定 ---
   const handlePdfUpload = (e) => {
     const file = e.target.files[0];
     if (file && file.type === 'application/pdf') {
       const reader = new FileReader();
       reader.onload = (event) => {
-        setPdfUrl(event.target.result); // 將轉換後的 DataURL/Base64 寫入永久狀態
+        setPdfUrl(event.target.result); 
       };
       reader.readAsDataURL(file);
     }
@@ -242,7 +239,8 @@ export default function App() {
     let notesText = '';
     const newSpecialRules = {};
 
-    const firstNoteIndex = rawAnswers.search(/備\s*註|第\s*\d+\s*題/);
+    // 修正：只以「備註」做為段落切割點，防止誤切「第X題」
+    const firstNoteIndex = rawAnswers.search(/備\s*註/);
     if (firstNoteIndex !== -1) {
       answersText = rawAnswers.substring(0, firstNoteIndex);
       notesText = rawAnswers.substring(firstNoteIndex);
@@ -280,7 +278,6 @@ export default function App() {
 
     setSetupError('');
     
-    // 如果是「修改舊有測驗設定」模式
     if (editingRecordId && db && user) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', editingRecordId);
       setDoc(docRef, {
@@ -306,7 +303,6 @@ export default function App() {
       return;
     }
 
-    // 否則為全新建立考試模式
     setCorrectAnswers(parsedAnswers.slice(0, qCount));
     setUserAnswers({});
     setMarks({});
@@ -444,7 +440,6 @@ export default function App() {
     setCurrentPage('quiz');
   };
 
-  // --- 新增功能：載入舊資料進入修改模式 ---
   const handleEditRecordSetup = (record) => {
     setRecordName(record.recordName || '');
     setTotalQuestions(record.totalQuestions || '');
@@ -455,8 +450,7 @@ export default function App() {
     setTimeLimitMinutes(record.timeLimitMinutes || '');
     setPdfUrl(record.pdfUrl || null);
     
-    // 重組正確答案與備註字串填回文字區
-    let reconstructedAnswers = (record.correctAnswers || []).join(' ');
+    let reconstructedAnswers = (record.correctAnswers || []).join('');
     if (record.specialRules && Object.keys(record.specialRules).length > 0) {
       reconstructedAnswers += '\n\n';
       Object.entries(record.specialRules).forEach(([idxStr, rule]) => {
@@ -470,7 +464,7 @@ export default function App() {
     }
     setRawAnswers(reconstructedAnswers);
     setEditingRecordId(record.id);
-    setSetupTab('new'); // 切換回表單填寫頁
+    setSetupTab('new');
   };
 
   const handleViewResult = (record) => {
@@ -575,7 +569,6 @@ export default function App() {
             {pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ 題目 PDF 已儲存於雲端綁定</span>}
           </div>
 
-          {/* --- 新增：正計時與倒計時選擇器 --- */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">計時模式</label>
             <div className="grid grid-cols-2 gap-2">
@@ -696,7 +689,6 @@ export default function App() {
                     <button onClick={() => handleViewResult(record)} className="text-sm bg-gray-800 hover:bg-black text-white font-bold px-4 py-2 rounded-lg transition">查看結果</button>
                   ) : (
                     <>
-                      {/* --- 新增功能：未作答或作答中允許修改測驗設定 --- */}
                       <button onClick={() => handleEditRecordSetup(record)} className="text-sm bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-3 py-2 rounded-lg transition">修改設定</button>
                       <button onClick={() => handleResumeRecord(record)} className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg transition">繼續作答</button>
                     </>
@@ -727,7 +719,7 @@ export default function App() {
                    {timerMode === 'down' ? '⏳ 剩餘 ' : '⏱ 已過 '} {formatTime(displaySeconds)}
                  </span>
                </span>
-               <div className="flex items-center space-x-2尊 mt-1">
+               <div className="flex items-center space-x-2 mt-1">
                  <span className="font-medium text-gray-700">第</span>
                  <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 border border-gray-300 rounded outline-none font-bold text-blue-600">
                    {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
@@ -736,7 +728,6 @@ export default function App() {
                </div>
             </div>
             <div className="flex items-center space-x-2 shrink-0">
-              {/* --- 新增：暫停作答按鈕 --- */}
               <button 
                 onClick={() => setIsPaused(true)}
                 className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm transition whitespace-nowrap"
@@ -799,7 +790,6 @@ export default function App() {
               <div className={`text-xs font-mono font-bold px-2 py-1 rounded ${timerMode === 'down' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
                 {timerMode === 'down' ? '⏳' : '⏱'} {formatTime(displaySeconds)}
               </div>
-              {/* --- 新增：手機版暫停按鈕 --- */}
               <button 
                 onClick={() => setIsPaused(true)}
                 className="bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold py-1 px-2 rounded transition"
@@ -879,17 +869,9 @@ export default function App() {
       <>
         {/* --- 電腦版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
-          <div className="p-4 border-b bg-gray-50 flex justify-between items-center shrink-0">
-            <div>
-              <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
-              <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
-            </div>
-            <div className="flex items-center space-x-3">
-              <span className={`text-xs font-mono font-bold px-2 py-1.5 rounded ${timerMode === 'down' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                {timerMode === 'down' ? '⏳ 剩餘 ' : '⏱ 已過 '} {formatTime(displaySeconds)}
-              </span>
-              <button onClick={() => setIsPaused(true)} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition">⏸ 暫停</button>
-            </div>
+          <div className="p-4 border-b bg-gray-50 text-center shrink-0">
+            <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
+            <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4">
@@ -1133,7 +1115,7 @@ export default function App() {
             className="shrink-0 h-auto max-h-[50dvh] w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
             style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           >
-            {currentPage === 'quiz' && renderQuizPage()}
+            {currentPage === 'quiz'}
             {currentPage === 'review' && renderReviewPage()}
             {currentPage === 'result' && renderResultPage()}
           </div>
