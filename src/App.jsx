@@ -58,12 +58,12 @@ export default function App() {
   const [records, setRecords] = useState([]);
   const [setupTab, setSetupTab] = useState('new');
   const [currentRecordId, setCurrentRecordId] = useState(null);
+  const [editingRecordId, setEditingRecordId] = useState(null); // 新增：正在修改設定的紀錄 ID
   const [recordName, setRecordName] = useState('');
   const [deleteModalId, setDeleteModalId] = useState(null);
   const [authError, setAuthError] = useState('');
 
-  const [pdfUrl, setPdfUrl] = useState(null);
-  const [isResultExpanded, setIsResultExpanded] = useState(true);
+  const [pdfUrl, setPdfUrl] = useState(null); // 存放 Base64 字串或 Object URL
 
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -79,9 +79,12 @@ export default function App() {
   const [marks, setMarks] = useState({});
   const [specialRules, setSpecialRules] = useState({});
 
-  // --- 碼表計時狀態 ---
+  // --- 計時與暫停相關狀態 ---
+  const [timerMode, setTimerMode] = useState('up'); // 'up' 正計時, 'down' 倒計時
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState(''); // 倒計時限（分鐘）
   const [elapsedTime, setElapsedTime] = useState(0);
-  const elapsedTimeRef = useRef(0); // 用 ref 來同步 Firebase 儲存，避免每秒觸發資料庫寫入
+  const [isPaused, setIsPaused] = useState(false); // 新增：暫停作答狀態
+  const elapsedTimeRef = useRef(0); 
 
   const [setupError, setSetupError] = useState('');
   const [feedbackModal, setFeedbackModal] = useState({ isOpen: false, isCorrect: false, correctAnswer: '' });
@@ -125,21 +128,40 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // --- 計時器邏輯 ---
+  // --- 計時器核心邏輯（包含倒計時強制交卷與暫停鎖定） ---
   useEffect(() => {
     let timer;
-    if (currentPage === 'quiz' || currentPage === 'review') {
+    if ((currentPage === 'quiz' || currentPage === 'review') && !isPaused) {
       timer = setInterval(() => {
         elapsedTimeRef.current += 1;
         setElapsedTime(elapsedTimeRef.current);
+
+        // 如果是倒計時模式，檢查是否時間到
+        if (timerMode === 'down' && timeLimitMinutes) {
+          const totalLimitSeconds = parseInt(timeLimitMinutes, 10) * 60;
+          if (elapsedTimeRef.current >= totalLimitSeconds) {
+            clearInterval(timer);
+            alert('考試時間已到！系統將為您強制交卷。');
+            handleSubmit();
+          }
+        }
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [currentPage]);
+  }, [currentPage, isPaused, timerMode, timeLimitMinutes]);
 
-  // --- Firebase 同步邏輯 ---
+  // --- 計算畫面上要顯示的秒數（正計時顯示已過時間，倒計時顯示剩餘時間） ---
+  const displaySeconds = useMemo(() => {
+    if (timerMode === 'down' && timeLimitMinutes) {
+      const totalLimitSeconds = parseInt(timeLimitMinutes, 10) * 60;
+      const remaining = totalLimitSeconds - elapsedTime;
+      return remaining > 0 ? remaining : 0;
+    }
+    return elapsedTime;
+  }, [timerMode, timeLimitMinutes, elapsedTime]);
+
   useEffect(() => {
-    if ((currentPage === 'quiz' || currentPage === 'review') && currentRecordId && db && user) {
+    if (currentPage === 'quiz' && currentRecordId && db && user && !isPaused) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
       setDoc(docRef, {
         recordName,
@@ -151,13 +173,16 @@ export default function App() {
         userAnswers,
         marks,
         specialRules,
-        elapsedTime: elapsedTimeRef.current, // 儲存時間
+        timerMode,
+        timeLimitMinutes,
+        pdfUrl, // 永久儲存雲端題目 Base64 資料
+        elapsedTime: elapsedTimeRef.current,
         currentQuestionIndex,
         status: 'in-progress',
         updatedAt: Date.now()
       }, { merge: true }).catch(console.error);
     }
-  }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName, specialRules]);
+  }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName, specialRules, isPaused, pdfUrl, timerMode, timeLimitMinutes]);
 
   const handleGoogleLogin = async () => {
     if (!auth) return;
@@ -185,11 +210,15 @@ export default function App() {
     }
   };
 
+  // --- 讀取檔案並直接轉換成雲端 Base64 永久綁定 ---
   const handlePdfUpload = (e) => {
     const file = e.target.files[0];
     if (file && file.type === 'application/pdf') {
-      const url = URL.createObjectURL(file);
-      setPdfUrl(url);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setPdfUrl(event.target.result); // 將轉換後的 DataURL/Base64 寫入永久狀態
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -250,12 +279,40 @@ export default function App() {
     }
 
     setSetupError('');
+    
+    // 如果是「修改舊有測驗設定」模式
+    if (editingRecordId && db && user) {
+      const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', editingRecordId);
+      setDoc(docRef, {
+        recordName,
+        totalQuestions: qCount,
+        optionCount,
+        pointsPerQuestion: pts,
+        gradingMode,
+        correctAnswers: parsedAnswers.slice(0, qCount),
+        specialRules: newSpecialRules,
+        timerMode,
+        timeLimitMinutes: timerMode === 'down' ? timeLimitMinutes : '',
+        pdfUrl,
+        updatedAt: Date.now()
+      }, { merge: true }).then(() => {
+        setEditingRecordId(null);
+        setSetupTab('history');
+        setRawAnswers('');
+        setTotalQuestions('');
+        setRecordName('');
+        setPdfUrl(null);
+      }).catch(console.error);
+      return;
+    }
+
+    // 否則為全新建立考試模式
     setCorrectAnswers(parsedAnswers.slice(0, qCount));
     setUserAnswers({});
     setMarks({});
     setSpecialRules(newSpecialRules);
     setCurrentQuestionIndex(0);
-    setIsResultExpanded(true); 
+    setIsPaused(false);
     setElapsedTime(0);
     elapsedTimeRef.current = 0;
     
@@ -321,11 +378,11 @@ export default function App() {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
       setDoc(docRef, { 
         status: 'completed', 
-        elapsedTime: elapsedTimeRef.current, // 送出時確保時間存進去
+        elapsedTime: elapsedTimeRef.current, 
         updatedAt: Date.now() 
       }, { merge: true }).catch(console.error);
     }
-    setIsResultExpanded(true);
+    setIsPaused(false);
     setCurrentPage('result');
   };
 
@@ -372,15 +429,48 @@ export default function App() {
     setUserAnswers(record.userAnswers || {});
     setMarks(record.marks || {});
     setSpecialRules(record.specialRules || {});
+    setTimerMode(record.timerMode || 'up');
+    setTimeLimitMinutes(record.timeLimitMinutes || '');
+    setPdfUrl(record.pdfUrl || null);
     setCurrentQuestionIndex(record.currentQuestionIndex || 0);
     
-    // 恢復計時器
     const loadedTime = record.elapsedTime || 0;
     setElapsedTime(loadedTime);
     elapsedTimeRef.current = loadedTime;
 
+    setIsPaused(false);
+    setEditingRecordId(null);
     setCurrentRecordId(record.id);
     setCurrentPage('quiz');
+  };
+
+  // --- 新增功能：載入舊資料進入修改模式 ---
+  const handleEditRecordSetup = (record) => {
+    setRecordName(record.recordName || '');
+    setTotalQuestions(record.totalQuestions || '');
+    setOptionCount(record.optionCount || 4);
+    setPointsPerQuestion(record.pointsPerQuestion || '');
+    setGradingMode(record.gradingMode || 'all-at-once');
+    setTimerMode(record.timerMode || 'up');
+    setTimeLimitMinutes(record.timeLimitMinutes || '');
+    setPdfUrl(record.pdfUrl || null);
+    
+    // 重組正確答案與備註字串填回文字區
+    let reconstructedAnswers = (record.correctAnswers || []).join(' ');
+    if (record.specialRules && Object.keys(record.specialRules).length > 0) {
+      reconstructedAnswers += '\n\n';
+      Object.entries(record.specialRules).forEach(([idxStr, rule]) => {
+        const num = parseInt(idxStr, 10) + 1;
+        if (rule.type === 'ALL') {
+          reconstructedAnswers += `備註：第${num}題一律給分。\n`;
+        } else if (rule.type === 'MULTI') {
+          reconstructedAnswers += `備註：第${num}題答${rule.options.join('或')}者均給分。\n`;
+        }
+      });
+    }
+    setRawAnswers(reconstructedAnswers);
+    setEditingRecordId(record.id);
+    setSetupTab('new'); // 切換回表單填寫頁
   };
 
   const handleViewResult = (record) => {
@@ -393,8 +483,8 @@ export default function App() {
     setUserAnswers(record.userAnswers || {});
     setMarks(record.marks || {});
     setSpecialRules(record.specialRules || {});
+    setPdfUrl(record.pdfUrl || null);
     
-    // 讀取計時器用於結果頁顯示
     const loadedTime = record.elapsedTime || 0;
     setElapsedTime(loadedTime);
     elapsedTimeRef.current = loadedTime;
@@ -407,6 +497,13 @@ export default function App() {
     if (!db || !user || !deleteModalId) return;
     try {
       await deleteDoc(doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', deleteModalId));
+      if (editingRecordId === deleteModalId) {
+        setEditingRecordId(null);
+        setRawAnswers('');
+        setTotalQuestions('');
+        setRecordName('');
+        setPdfUrl(null);
+      }
     } catch (e) { console.error("刪除失敗:", e); }
     setDeleteModalId(null);
   };
@@ -414,7 +511,7 @@ export default function App() {
   const renderSetupPage = () => (
     <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-xl p-6 flex flex-col max-h-[95vh] overflow-hidden relative z-10">
       <div className="flex justify-between items-center mb-4 shrink-0">
-        <h1 className="text-xl font-bold text-gray-800">選擇題自動批改</h1>
+        <h1 className="text-xl font-bold text-gray-800">{editingRecordId ? '修改測驗設定' : '選擇題自動批改'}</h1>
         {user && user.isAnonymous && (
           <button onClick={handleGoogleLogin} className="text-xs bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-full hover:bg-blue-200 transition shadow-sm">
             👉 登入跨裝置同步
@@ -431,8 +528,10 @@ export default function App() {
       </div>
       
       <div className="flex border-b mb-6 shrink-0">
-        <button onClick={() => setSetupTab('new')} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'new' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>📝 建立新測驗</button>
-        <button onClick={() => setSetupTab('history')} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'history' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>📂 作答紀錄</button>
+        <button onClick={() => { setSetupTab('new'); }} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'new' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
+          {editingRecordId ? '📝 修改設定' : '📝 建立新測驗'}
+        </button>
+        <button onClick={() => { if(editingRecordId) { if(confirm('正在修改設定中，確定要放棄修改並回到歷史紀錄？')) { setEditingRecordId(null); setRecordName(''); setTotalQuestions(''); setRawAnswers(''); setPdfUrl(null); setSetupTab('history'); } } else { setSetupTab('history'); } }} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'history' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>📂 作答紀錄</button>
       </div>
 
       {authError && (
@@ -449,6 +548,11 @@ export default function App() {
 
       {setupTab === 'new' && (
         <div className="space-y-4 overflow-y-auto pr-2 pb-4">
+          {editingRecordId && (
+            <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700 font-medium">
+              ⚠️ 您目前正在修改歷史紀錄的設定，儲存後會同步更新雲端標準答案與配置。
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">本次作答紀錄名稱</label>
             <input 
@@ -461,15 +565,36 @@ export default function App() {
           </div>
           
           <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF 以供對照 (選填)</label>
+            <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF（將同步儲存至雲端隨身攜帶）</label>
             <input 
               type="file" 
               accept="application/pdf"
               onChange={handlePdfUpload}
               className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
             />
-            {pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ PDF 檔案已成功載入</span>}
+            {pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ 題目 PDF 已儲存於雲端綁定</span>}
           </div>
+
+          {/* --- 新增：正計時與倒計時選擇器 --- */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">計時模式</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setTimerMode('up')} className={`py-2 rounded-lg font-medium text-sm transition ${timerMode === 'up' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>正計時</button>
+              <button type="button" onClick={() => setTimerMode('down')} className={`py-2 rounded-lg font-medium text-sm transition ${timerMode === 'down' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>倒計時</button>
+            </div>
+          </div>
+
+          {timerMode === 'down' && (
+            <div className="animate-scale-in">
+              <label className="block text-sm font-medium text-gray-700 mb-1">考試時限（分鐘）</label>
+              <input 
+                type="text" inputMode="numeric" pattern="[0-9]*"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="例如: 60" value={timeLimitMinutes} onChange={(e) => setTimeLimitMinutes(e.target.value.replace(/[^0-9]/g, ''))}
+              />
+              <span className="text-xs text-red-500 mt-1 block font-medium">※ 倒計時結束時，系統將會強制儲存進度並自動交卷。</span>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">總題數</label>
@@ -483,7 +608,7 @@ export default function App() {
             <label className="block text-sm font-medium text-gray-700 mb-1">選項數量</label>
             <div className="grid grid-cols-3 gap-2">
               {[3, 4, 5].map(num => (
-                <button key={num} className={`py-2 rounded-lg font-medium transition ${optionCount === num ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setOptionCount(num)}>{num} 個</button>
+                <button key={num} type="button" className={`py-2 rounded-lg font-medium transition ${optionCount === num ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setOptionCount(num)}>{num} 個</button>
               ))}
             </div>
           </div>
@@ -498,8 +623,8 @@ export default function App() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">批改方式</label>
             <div className="grid grid-cols-2 gap-2">
-              <button className={`py-2 rounded-lg font-medium transition ${gradingMode === 'per-question' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setGradingMode('per-question')}>逐題批改</button>
-              <button className={`py-2 rounded-lg font-medium transition ${gradingMode === 'all-at-once' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setGradingMode('all-at-once')}>作答完一次批改</button>
+              <button type="button" className={`py-2 rounded-lg font-medium transition ${gradingMode === 'per-question' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setGradingMode('per-question')}>逐題批改</button>
+              <button type="button" className={`py-2 rounded-lg font-medium transition ${gradingMode === 'all-at-once' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setGradingMode('all-at-once')}>作答完一次批改</button>
             </div>
           </div>
           <div>
@@ -510,7 +635,9 @@ export default function App() {
               value={rawAnswers} onChange={(e) => setRawAnswers(e.target.value)}
             />
           </div>
-          <button onClick={handleStart} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition mt-2 shrink-0">開始作答</button>
+          <button onClick={handleStart} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition mt-2 shrink-0">
+            {editingRecordId ? '儲存修改設定' : '開始作答'}
+          </button>
         </div>
       )}
 
@@ -553,12 +680,12 @@ export default function App() {
                   <div className="min-w-0 flex-1">
                     <h3 className="font-bold text-gray-800 text-lg break-words">{record.recordName || '未命名測驗'}</h3>
                     <p className="text-xs text-gray-500">{new Date(record.updatedAt).toLocaleString()}</p>
-                    {scoreDisplay && (
-                      <p className="text-sm font-bold text-blue-600 mt-1">
-                        得分: {scoreDisplay} 
-                        <span className="text-gray-400 text-xs ml-2 font-normal">⏱ {formatTime(record.elapsedTime || 0)}</span>
-                      </p>
-                    )}
+                    <div className="flex items-center gap-3 mt-1 flex-wrap">
+                      {scoreDisplay && <span className="text-sm font-bold text-blue-600">得分: {scoreDisplay}</span>}
+                      <span className="text-gray-500 text-xs font-medium">⏱ 耗時: {formatTime(record.elapsedTime || 0)}</span>
+                      {record.timerMode === 'down' && <span className="text-red-500 text-xs font-bold bg-red-50 px-1.5 py-0.5 rounded">倒計時 {record.timeLimitMinutes}分</span>}
+                      {record.pdfUrl && <span className="text-green-600 text-xs font-bold bg-green-50 px-1.5 py-0.5 rounded">附題目檔</span>}
+                    </div>
                   </div>
                   <span className={`text-xs font-bold px-2 py-1 rounded whitespace-nowrap shrink-0 ${statusColor}`}>
                     {statusText}
@@ -568,7 +695,11 @@ export default function App() {
                   {displayStatus === 'completed' ? (
                     <button onClick={() => handleViewResult(record)} className="text-sm bg-gray-800 hover:bg-black text-white font-bold px-4 py-2 rounded-lg transition">查看結果</button>
                   ) : (
-                    <button onClick={() => handleResumeRecord(record)} className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg transition">繼續作答</button>
+                    <>
+                      {/* --- 新增功能：未作答或作答中允許修改測驗設定 --- */}
+                      <button onClick={() => handleEditRecordSetup(record)} className="text-sm bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-3 py-2 rounded-lg transition">修改設定</button>
+                      <button onClick={() => handleResumeRecord(record)} className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg transition">繼續作答</button>
+                    </>
                   )}
                   <button onClick={() => setDeleteModalId(record.id)} className="text-sm bg-red-100 hover:bg-red-200 text-red-700 font-bold px-4 py-2 rounded-lg transition">刪除</button>
                 </div>
@@ -592,9 +723,11 @@ export default function App() {
             <div className="flex flex-col flex-1 min-w-0 pr-2">
                <span className="text-sm font-bold text-blue-600 mb-1 leading-tight break-words flex items-center">
                  {recordName}
-                 <span className="ml-3 text-xs font-mono font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded">⏱ {formatTime(elapsedTime)}</span>
+                 <span className={`ml-3 text-xs font-mono font-bold px-2 py-1 rounded ${timerMode === 'down' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                   {timerMode === 'down' ? '⏳ 剩餘 ' : '⏱ 已過 '} {formatTime(displaySeconds)}
+                 </span>
                </span>
-               <div className="flex items-center space-x-2 mt-1">
+               <div className="flex items-center space-x-2尊 mt-1">
                  <span className="font-medium text-gray-700">第</span>
                  <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 border border-gray-300 rounded outline-none font-bold text-blue-600">
                    {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
@@ -602,16 +735,25 @@ export default function App() {
                  <span className="font-medium text-gray-700">題 / {correctAnswers.length} 題</span>
                </div>
             </div>
-            <button 
-              onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
-              className="flex items-center justify-center w-10 h-10 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
-              title="回首頁"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-              </svg>
-            </button>
+            <div className="flex items-center space-x-2 shrink-0">
+              {/* --- 新增：暫停作答按鈕 --- */}
+              <button 
+                onClick={() => setIsPaused(true)}
+                className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm transition whitespace-nowrap"
+              >
+                ⏸ 暫停作答
+              </button>
+              <button 
+                onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
+                className="flex items-center justify-center w-10 h-10 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all"
+                title="回首頁"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div className="p-4 flex justify-center space-x-4 border-b shrink-0">
@@ -654,12 +796,19 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-2 shrink-0">
-              <div className="text-xs font-mono font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                ⏱ {formatTime(elapsedTime)}
+              <div className={`text-xs font-mono font-bold px-2 py-1 rounded ${timerMode === 'down' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                {timerMode === 'down' ? '⏳' : '⏱'} {formatTime(displaySeconds)}
               </div>
+              {/* --- 新增：手機版暫停按鈕 --- */}
+              <button 
+                onClick={() => setIsPaused(true)}
+                className="bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold py-1 px-2 rounded transition"
+              >
+                ⏸ 暫停
+              </button>
               <button 
                 onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
-                className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all"
+                className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm"
                 title="回首頁"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -735,8 +884,11 @@ export default function App() {
               <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
               <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
             </div>
-            <div className="text-sm font-mono font-bold bg-blue-100 text-blue-700 px-3 py-1.5 rounded">
-              ⏱ {formatTime(elapsedTime)}
+            <div className="flex items-center space-x-3">
+              <span className={`text-xs font-mono font-bold px-2 py-1.5 rounded ${timerMode === 'down' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                {timerMode === 'down' ? '⏳ 剩餘 ' : '⏱ 已過 '} {formatTime(displaySeconds)}
+              </span>
+              <button onClick={() => setIsPaused(true)} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition">⏸ 暫停</button>
             </div>
           </div>
 
@@ -779,13 +931,13 @@ export default function App() {
               <span className="font-bold text-gray-800 text-sm truncate w-full">{recordName}</span>
             </div>
             
-            <div className="text-xs font-mono font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded mr-2 shrink-0">
-              ⏱ {formatTime(elapsedTime)}
-            </div>
-
-            <div className="flex gap-2 shrink-0">
-              <button onClick={() => setCurrentPage('quiz')} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-3 py-1.5 rounded transition text-xs">修改</button>
-              <button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700 text-white font-bold px-3 py-1.5 rounded shadow transition text-xs">交卷</button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className={`text-xs font-mono font-bold px-1.5 py-1 rounded ${timerMode === 'down' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                {formatTime(displaySeconds)}
+              </div>
+              <button onClick={() => setIsPaused(true)} className="bg-amber-500 text-white text-[11px] font-bold px-1.5 py-1 rounded transition">⏸ 暫停</button>
+              <button onClick={() => setCurrentPage('quiz')} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-2 py-1 rounded transition text-xs">修改</button>
+              <button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700 text-white font-bold px-2 py-1 rounded shadow transition text-xs">交卷</button>
             </div>
           </div>
 
@@ -820,7 +972,7 @@ export default function App() {
              <div className="flex items-baseline justify-center mt-1">
               <span className="text-4xl font-bold">{score}</span>
               <span className="text-lg ml-1 opacity-80">/ {totalScore} 分</span>
-              <span className="text-sm ml-3 opacity-80 bg-black/20 px-2 py-0.5 rounded-full">⏱ 耗時 {formatTime(elapsedTime)}</span>
+              <span className="text-sm ml-3 opacity-80 bg-black/20 px-2 py-0.5 rounded-full">⏱ 總耗時 {formatTime(elapsedTime)}</span>
             </div>
           </div>
 
@@ -859,6 +1011,7 @@ export default function App() {
                 setRawAnswers('');
                 setTotalQuestions('');
                 setRecordName('');
+                setPdfUrl(null);
                 setCurrentRecordId(null);
               }}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition"
@@ -887,6 +1040,7 @@ export default function App() {
                 setRawAnswers('');
                 setTotalQuestions('');
                 setRecordName('');
+                setPdfUrl(null);
                 setCurrentRecordId(null);
               }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded shadow transition text-xs">新測驗</button>
              </div>
@@ -894,7 +1048,7 @@ export default function App() {
 
           <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {details.map(item => (
-              <div key={item.questionNum} className={`relative overflow-hidden flex flex-col items-center justify-center w-[100px] h-28 shrink-0 rounded-xl border shadow-sm ${item.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+              <div key={item.questionNum} className="relative overflow-hidden flex flex-col items-center justify-center w-[100px] h-28 shrink-0 rounded-xl border shadow-sm bg-white border-gray-200">
                 <div className="flex w-full px-2 justify-between items-center mb-1 z-10">
                   <span className="text-xs font-bold text-gray-500">#{item.questionNum}</span>
                   <span className={`text-xs font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
@@ -932,9 +1086,32 @@ export default function App() {
       
       {currentPage === 'setup' && renderSetupPage()}
 
-      {currentPage !== 'setup' && (
+      {/* --- 核心邏輯：暫停作答時遮蔽所有題目與作答區 --- */}
+      {currentPage !== 'setup' && isPaused && (
+        <div className="fixed inset-0 bg-gray-900/95 flex flex-col items-center justify-center z-50 p-6 text-center backdrop-blur-md animate-scale-in">
+          <div className="text-6xl mb-4">🔒</div>
+          <h2 className="text-2xl font-bold text-white mb-2">作答暫停中</h2>
+          <p className="text-gray-400 text-sm max-w-xs mb-8">目前的作答時間已凍結，題目與作答區域已安全遮蔽。</p>
+          <div className="flex flex-col w-full max-w-xs gap-3">
+            <button 
+              onClick={() => setIsPaused(false)} 
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg transition text-base"
+            >
+              ▶ 繼續作答
+            </button>
+            <button 
+              onClick={() => { setIsPaused(false); setCurrentPage('setup'); setSetupTab('history'); }} 
+              className="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-3 rounded-xl transition text-sm"
+            >
+              🏠 返回歷史紀錄列表
+            </button>
+          </div>
+        </div>
+      )}
+
+      {currentPage !== 'setup' && !isPaused && (
         <>
-          {/* 左側 / 上方：PDF 瀏覽區 */}
+          {/* 左側 / 上方：PDF 題目瀏覽區 */}
           <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
             {pdfUrl ? (
               <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
@@ -951,7 +1128,7 @@ export default function App() {
             )}
           </div>
 
-          {/* 右側 / 下方：App 介面區 */}
+          {/* 右側 / 下方：App 作答操作區 */}
           <div 
             className="shrink-0 h-auto max-h-[50dvh] w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
             style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
