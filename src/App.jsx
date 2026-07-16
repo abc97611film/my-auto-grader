@@ -166,7 +166,11 @@ export default function App() {
     }
   };
 
-  const parseAnswers = (text) => text.replace(/[^a-zA-Z#]/g, '').toUpperCase().split('');
+  const parseAnswers = (text) => {
+    // 終極修復：將全形英文轉換為半形，避免 PDF 複製出來的字母無法辨識
+    const halfWidthText = text.replace(/[Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    return halfWidthText.replace(/[^a-zA-Z#]/g, '').toUpperCase().split('');
+  };
 
   const handleStart = () => {
     if (!recordName.trim()) {
@@ -183,28 +187,23 @@ export default function App() {
     let notesText = '';
     const newSpecialRules = {};
 
-    // 改良版：自動尋找「備註」或「第X題」作為分界點，切分答案區與規則區
-    const firstNoteIndex = rawAnswers.search(/備\s*註|第\s*\d+\s*題/);
+    // 尋找「備註」做為切分點，把答案區與備註區一刀切開 (支援「備 註」中間有空格)
+    const firstNoteIndex = rawAnswers.search(/備\s*註/);
     if (firstNoteIndex !== -1) {
       answersText = rawAnswers.substring(0, firstNoteIndex);
       notesText = rawAnswers.substring(firstNoteIndex);
     }
     
-    // 改良版：在規則區內，抓取每一個「第 X 題...」的段落
+    // 獨立在備註區中尋找每一個「第X題...」的給分規則
     const noteRegex = /第\s*(\d+)\s*題(.*?)(?=第\s*\d+\s*題|$)/gs;
     let match;
-    
     while ((match = noteRegex.exec(notesText)) !== null) {
       const qIdx = parseInt(match[1], 10) - 1; 
-      
       if (qIdx >= 0 && qIdx < qCount) {
-        // 將全形英文轉換為半形，轉大寫
         let content = match[2].replace(/[Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).toUpperCase();
-        
         if (content.includes('一律給分') || content.includes('送分')) {
           newSpecialRules[qIdx] = { type: 'ALL' };
         } else {
-          // 擷取所有提到的英文字母（例如「答A或B者」擷取 A, B）
           const letters = content.match(/[A-Z]/g);
           if (letters) {
             newSpecialRules[qIdx] = { type: 'MULTI', options: [...new Set(letters)] }; 
