@@ -239,12 +239,16 @@ export default function App() {
     let notesText = '';
     const newSpecialRules = {};
 
-    // 修正：只以「備註」做為段落切割點，防止誤切「第X題」
-    const firstNoteIndex = rawAnswers.search(/備\s*註/);
+    // 1. 切割出備註區塊（加上冒號判斷，避免切到標頭的「詳見備註」）
+    const firstNoteIndex = rawAnswers.search(/備\s*註\s*[：:]/);
     if (firstNoteIndex !== -1) {
       answersText = rawAnswers.substring(0, firstNoteIndex);
       notesText = rawAnswers.substring(firstNoteIndex);
     }
+    
+    // 2. 過濾掉官方標頭常見的干擾字眼（特別是標頭裡的 # 號與卷別）
+    answersText = answersText.replace(/答案標註#者/g, '');
+    answersText = answersText.replace(/[A-Z][卷組]/gi, ''); 
     
     const noteRegex = /第\s*(\d+)\s*題(.*?)(?=第\s*\d+\s*題|$)/gs;
     let match;
