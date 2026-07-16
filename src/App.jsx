@@ -54,6 +54,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [pdfUrl, setPdfUrl] = useState(null);
+  const [isResultExpanded, setIsResultExpanded] = useState(true);
 
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -67,7 +68,7 @@ export default function App() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState({});
   const [marks, setMarks] = useState({});
-  const [specialRules, setSpecialRules] = useState({}); // 新增：用來儲存特殊給分規則
+  const [specialRules, setSpecialRules] = useState({});
 
   const [setupError, setSetupError] = useState('');
   const [feedbackModal, setFeedbackModal] = useState({ isOpen: false, isCorrect: false, correctAnswer: '' });
@@ -123,7 +124,7 @@ export default function App() {
         correctAnswers,
         userAnswers,
         marks,
-        specialRules, // 儲存特殊規則至雲端
+        specialRules,
         currentQuestionIndex,
         status: 'in-progress',
         updatedAt: Date.now()
@@ -133,10 +134,7 @@ export default function App() {
 
   const handleGoogleLogin = async () => {
     if (!auth) return;
-    
-    // 偵測是否為已加入主畫面的 PWA 獨立模式
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-    
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
@@ -168,7 +166,7 @@ export default function App() {
     }
   };
 
-  const parseAnswers = (text) => text.replace(/[^a-zA-Z]/g, '').toUpperCase().split('');
+  const parseAnswers = (text) => text.replace(/[^a-zA-Z#]/g, '').toUpperCase().split('');
 
   const handleStart = () => {
     if (!recordName.trim()) {
@@ -181,27 +179,23 @@ export default function App() {
     if (!qCount || qCount <= 0) { setSetupError('請輸入有效的總題數。'); return; }
     if (!pts || pts <= 0) { setSetupError('請輸入有效的每題配分。'); return; }
 
-    // --- 新增：智慧解析備註區與特殊給分規則 ---
     let answersText = rawAnswers;
     const newSpecialRules = {};
-    // 利用正規表達式抓取「備註：第X題...」的段落
     const noteRegex = /備註[：:]\s*第\s*(\d+)\s*題(.*?)(?=備註[：:]|$)/gs;
     let match;
     
     while ((match = noteRegex.exec(rawAnswers)) !== null) {
-      const qIdx = parseInt(match[1], 10) - 1; // 轉為從 0 開始的陣列索引
-      answersText = answersText.replace(match[0], ''); // 將備註從純文字中抽離，避免干擾正規選項擷取
+      const qIdx = parseInt(match[1], 10) - 1; 
+      answersText = answersText.replace(match[0], ''); 
       
       if (qIdx >= 0 && qIdx < qCount) {
-        // 將備註文字轉為半形大寫，以利後續統一判斷
         let content = match[2].replace(/[Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).toUpperCase();
         if (content.includes('一律給分')) {
           newSpecialRules[qIdx] = { type: 'ALL' };
         } else {
-          // 擷取備註內容中提到的所有英文字母（例如「答B或C或BC者」會擷取出 B, C）
           const letters = content.match(/[A-Z]/g);
           if (letters) {
-            newSpecialRules[qIdx] = { type: 'MULTI', options: [...new Set(letters)] }; // 使用 Set 移除重複字母
+            newSpecialRules[qIdx] = { type: 'MULTI', options: [...new Set(letters)] }; 
           }
         }
       }
@@ -209,11 +203,11 @@ export default function App() {
 
     const parsedAnswers = parseAnswers(answersText);
     if (parsedAnswers.length < qCount) {
-      setSetupError(`正確答案數量不足。設定了 ${qCount} 題，但只偵測到 ${parsedAnswers.length} 個英文字母。`);
+      setSetupError(`正確答案數量不足。設定了 ${qCount} 題，但只偵測到 ${parsedAnswers.length} 個有效答案 (含英文字母或 # 號)。`);
       return;
     }
 
-    const validLetters = ALPHABET.slice(0, optionCount);
+    const validLetters = [...ALPHABET.slice(0, optionCount), '#'];
     const invalidAnswerIndex = parsedAnswers.slice(0, qCount).findIndex(ans => !validLetters.includes(ans));
     if (invalidAnswerIndex !== -1) {
       setSetupError(`偵測到無效答案 '${parsedAnswers[invalidAnswerIndex]}' 於第 ${invalidAnswerIndex + 1} 題。請確認字母是否符合選項數量。`);
@@ -261,7 +255,6 @@ export default function App() {
       let isCorrect = false;
       let displayCorrectAns = correctAns;
 
-      // 檢查此題是否有特殊給分規則
       if (rule) {
         if (rule.type === 'ALL') {
           isCorrect = true;
@@ -291,6 +284,7 @@ export default function App() {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
       setDoc(docRef, { status: 'completed', updatedAt: Date.now() }, { merge: true }).catch(console.error);
     }
+    setIsResultExpanded(true);
     setCurrentPage('result');
   };
 
@@ -304,10 +298,9 @@ export default function App() {
       let isCorrect = false;
       let displayCorrectAns = correctAns;
 
-      // 檢查此題是否有特殊給分規則
       if (rule) {
         if (rule.type === 'ALL') {
-          isCorrect = true; // 不論有無作答皆給分
+          isCorrect = true; 
           displayCorrectAns = '一律給分';
         } else if (rule.type === 'MULTI') {
           isCorrect = !!userAns && rule.options.includes(userAns);
