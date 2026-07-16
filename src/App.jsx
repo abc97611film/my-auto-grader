@@ -180,19 +180,31 @@ export default function App() {
     if (!pts || pts <= 0) { setSetupError('請輸入有效的每題配分。'); return; }
 
     let answersText = rawAnswers;
+    let notesText = '';
     const newSpecialRules = {};
-    const noteRegex = /備註[：:]\s*第\s*(\d+)\s*題(.*?)(?=備註[：:]|$)/gs;
+
+    // 改良版：自動尋找「備註」或「第X題」作為分界點，切分答案區與規則區
+    const firstNoteIndex = rawAnswers.search(/備\s*註|第\s*\d+\s*題/);
+    if (firstNoteIndex !== -1) {
+      answersText = rawAnswers.substring(0, firstNoteIndex);
+      notesText = rawAnswers.substring(firstNoteIndex);
+    }
+    
+    // 改良版：在規則區內，抓取每一個「第 X 題...」的段落
+    const noteRegex = /第\s*(\d+)\s*題(.*?)(?=第\s*\d+\s*題|$)/gs;
     let match;
     
-    while ((match = noteRegex.exec(rawAnswers)) !== null) {
+    while ((match = noteRegex.exec(notesText)) !== null) {
       const qIdx = parseInt(match[1], 10) - 1; 
-      answersText = answersText.replace(match[0], ''); 
       
       if (qIdx >= 0 && qIdx < qCount) {
+        // 將全形英文轉換為半形，轉大寫
         let content = match[2].replace(/[Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).toUpperCase();
-        if (content.includes('一律給分')) {
+        
+        if (content.includes('一律給分') || content.includes('送分')) {
           newSpecialRules[qIdx] = { type: 'ALL' };
         } else {
+          // 擷取所有提到的英文字母（例如「答A或B者」擷取 A, B）
           const letters = content.match(/[A-Z]/g);
           if (letters) {
             newSpecialRules[qIdx] = { type: 'MULTI', options: [...new Set(letters)] }; 
