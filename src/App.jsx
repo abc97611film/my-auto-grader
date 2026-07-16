@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
@@ -44,6 +44,15 @@ const MARK_OPTIONS = [
 ];
 const ALPHABET = ['A', 'B', 'C', 'D', 'E'];
 
+// --- 時間格式化工具 ---
+const formatTime = (totalSeconds) => {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+  const s = (totalSeconds % 60).toString().padStart(2, '0');
+  if (h > 0) return `${h}:${m}:${s}`;
+  return `${m}:${s}`;
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [records, setRecords] = useState([]);
@@ -69,6 +78,10 @@ export default function App() {
   const [userAnswers, setUserAnswers] = useState({});
   const [marks, setMarks] = useState({});
   const [specialRules, setSpecialRules] = useState({});
+
+  // --- 碼表計時狀態 ---
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const elapsedTimeRef = useRef(0); // 用 ref 來同步 Firebase 儲存，避免每秒觸發資料庫寫入
 
   const [setupError, setSetupError] = useState('');
   const [feedbackModal, setFeedbackModal] = useState({ isOpen: false, isCorrect: false, correctAnswer: '' });
@@ -112,8 +125,21 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
+  // --- 計時器邏輯 ---
   useEffect(() => {
-    if (currentPage === 'quiz' && currentRecordId && db && user) {
+    let timer;
+    if (currentPage === 'quiz' || currentPage === 'review') {
+      timer = setInterval(() => {
+        elapsedTimeRef.current += 1;
+        setElapsedTime(elapsedTimeRef.current);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [currentPage]);
+
+  // --- Firebase 同步邏輯 ---
+  useEffect(() => {
+    if ((currentPage === 'quiz' || currentPage === 'review') && currentRecordId && db && user) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
       setDoc(docRef, {
         recordName,
@@ -125,6 +151,7 @@ export default function App() {
         userAnswers,
         marks,
         specialRules,
+        elapsedTime: elapsedTimeRef.current, // 儲存時間
         currentQuestionIndex,
         status: 'in-progress',
         updatedAt: Date.now()
@@ -167,7 +194,6 @@ export default function App() {
   };
 
   const parseAnswers = (text) => {
-    // 終極修復：將全形英文轉換為半形，避免 PDF 複製出來的字母無法辨識
     const halfWidthText = text.replace(/[Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
     return halfWidthText.replace(/[^a-zA-Z#]/g, '').toUpperCase().split('');
   };
@@ -187,14 +213,12 @@ export default function App() {
     let notesText = '';
     const newSpecialRules = {};
 
-    // 尋找「備註」做為切分點，把答案區與備註區一刀切開 (支援「備 註」中間有空格)
-    const firstNoteIndex = rawAnswers.search(/備\s*註/);
+    const firstNoteIndex = rawAnswers.search(/備\s*註|第\s*\d+\s*題/);
     if (firstNoteIndex !== -1) {
       answersText = rawAnswers.substring(0, firstNoteIndex);
       notesText = rawAnswers.substring(firstNoteIndex);
     }
     
-    // 獨立在備註區中尋找每一個「第X題...」的給分規則
     const noteRegex = /第\s*(\d+)\s*題(.*?)(?=第\s*\d+\s*題|$)/gs;
     let match;
     while ((match = noteRegex.exec(notesText)) !== null) {
@@ -232,6 +256,8 @@ export default function App() {
     setSpecialRules(newSpecialRules);
     setCurrentQuestionIndex(0);
     setIsResultExpanded(true); 
+    setElapsedTime(0);
+    elapsedTimeRef.current = 0;
     
     const newId = Date.now().toString();
     setCurrentRecordId(newId);
@@ -293,7 +319,11 @@ export default function App() {
   const handleSubmit = () => {
     if (db && user && currentRecordId) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
-      setDoc(docRef, { status: 'completed', updatedAt: Date.now() }, { merge: true }).catch(console.error);
+      setDoc(docRef, { 
+        status: 'completed', 
+        elapsedTime: elapsedTimeRef.current, // 送出時確保時間存進去
+        updatedAt: Date.now() 
+      }, { merge: true }).catch(console.error);
     }
     setIsResultExpanded(true);
     setCurrentPage('result');
@@ -343,6 +373,12 @@ export default function App() {
     setMarks(record.marks || {});
     setSpecialRules(record.specialRules || {});
     setCurrentQuestionIndex(record.currentQuestionIndex || 0);
+    
+    // 恢復計時器
+    const loadedTime = record.elapsedTime || 0;
+    setElapsedTime(loadedTime);
+    elapsedTimeRef.current = loadedTime;
+
     setCurrentRecordId(record.id);
     setCurrentPage('quiz');
   };
@@ -357,6 +393,12 @@ export default function App() {
     setUserAnswers(record.userAnswers || {});
     setMarks(record.marks || {});
     setSpecialRules(record.specialRules || {});
+    
+    // 讀取計時器用於結果頁顯示
+    const loadedTime = record.elapsedTime || 0;
+    setElapsedTime(loadedTime);
+    elapsedTimeRef.current = loadedTime;
+
     setCurrentRecordId(record.id);
     setCurrentPage('result');
   };
@@ -511,7 +553,12 @@ export default function App() {
                   <div className="min-w-0 flex-1">
                     <h3 className="font-bold text-gray-800 text-lg break-words">{record.recordName || '未命名測驗'}</h3>
                     <p className="text-xs text-gray-500">{new Date(record.updatedAt).toLocaleString()}</p>
-                    {scoreDisplay && <p className="text-sm font-bold text-blue-600 mt-1">得分: {scoreDisplay}</p>}
+                    {scoreDisplay && (
+                      <p className="text-sm font-bold text-blue-600 mt-1">
+                        得分: {scoreDisplay} 
+                        <span className="text-gray-400 text-xs ml-2 font-normal">⏱ {formatTime(record.elapsedTime || 0)}</span>
+                      </p>
+                    )}
                   </div>
                   <span className={`text-xs font-bold px-2 py-1 rounded whitespace-nowrap shrink-0 ${statusColor}`}>
                     {statusText}
@@ -543,11 +590,11 @@ export default function App() {
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
-               <span className="text-sm font-bold text-blue-600 mb-1 leading-tight break-words">
+               <span className="text-sm font-bold text-blue-600 mb-1 leading-tight break-words flex items-center">
                  {recordName}
-                 <span className="block mt-0.5 text-xs opacity-75 font-normal">(自動儲存中)</span>
+                 <span className="ml-3 text-xs font-mono font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded">⏱ {formatTime(elapsedTime)}</span>
                </span>
-               <div className="flex items-center space-x-2">
+               <div className="flex items-center space-x-2 mt-1">
                  <span className="font-medium text-gray-700">第</span>
                  <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 border border-gray-300 rounded outline-none font-bold text-blue-600">
                    {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
@@ -605,16 +652,22 @@ export default function App() {
               </select>
               <span>題 / {correctAnswers.length}題</span>
             </div>
-            <button 
-              onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
-              className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0 ml-2"
-              title="回首頁"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-              </svg>
-            </button>
+            
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="text-xs font-mono font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                ⏱ {formatTime(elapsedTime)}
+              </div>
+              <button 
+                onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
+                className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all"
+                title="回首頁"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+              </button>
+            </div>
           </div>
           
           <div className="w-full flex flex-row items-center px-2 py-3 gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
@@ -677,9 +730,14 @@ export default function App() {
       <>
         {/* --- 電腦版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
-          <div className="p-4 border-b bg-gray-50 text-center shrink-0">
-            <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
-            <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
+          <div className="p-4 border-b bg-gray-50 flex justify-between items-center shrink-0">
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
+              <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
+            </div>
+            <div className="text-sm font-mono font-bold bg-blue-100 text-blue-700 px-3 py-1.5 rounded">
+              ⏱ {formatTime(elapsedTime)}
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4">
@@ -720,6 +778,11 @@ export default function App() {
               <span className="text-xs text-gray-400">作答檢查</span>
               <span className="font-bold text-gray-800 text-sm truncate w-full">{recordName}</span>
             </div>
+            
+            <div className="text-xs font-mono font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded mr-2 shrink-0">
+              ⏱ {formatTime(elapsedTime)}
+            </div>
+
             <div className="flex gap-2 shrink-0">
               <button onClick={() => setCurrentPage('quiz')} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-3 py-1.5 rounded transition text-xs">修改</button>
               <button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700 text-white font-bold px-3 py-1.5 rounded shadow transition text-xs">交卷</button>
@@ -757,6 +820,7 @@ export default function App() {
              <div className="flex items-baseline justify-center mt-1">
               <span className="text-4xl font-bold">{score}</span>
               <span className="text-lg ml-1 opacity-80">/ {totalScore} 分</span>
+              <span className="text-sm ml-3 opacity-80 bg-black/20 px-2 py-0.5 rounded-full">⏱ 耗時 {formatTime(elapsedTime)}</span>
             </div>
           </div>
 
@@ -812,6 +876,7 @@ export default function App() {
                <div className="flex items-baseline mt-0.5">
                 <span className="text-lg font-bold text-blue-600">{score}</span>
                 <span className="text-xs ml-1 text-gray-500">/ {totalScore} 分</span>
+                <span className="text-[10px] ml-2 font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">⏱ {formatTime(elapsedTime)}</span>
               </div>
              </div>
              <div className="flex gap-2 shrink-0">
