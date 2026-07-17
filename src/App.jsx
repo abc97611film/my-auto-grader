@@ -3,7 +3,6 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
-// --- Firebase 初始化區塊 ---
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     return JSON.parse(__firebase_config);
@@ -52,7 +51,73 @@ const formatTime = (totalSeconds) => {
   return `${m}:${s}`;
 };
 
+// --- 補回遺失的 PdfViewer：利用 PDF.js 破解 iOS 無法滑動的 Bug ---
+const PdfViewer = ({ pdfUrl }) => {
+  const containerRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadPdf = async () => {
+      setIsLoading(true);
+      // 動態載入 Mozilla 的 PDF.js 引擎
+      if (!window.pdfjsLib) {
+        await new Promise((resolve) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+          script.onload = () => {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+            resolve();
+          };
+          document.body.appendChild(script);
+        });
+      }
+
+      if (!isMounted) return;
+
+      try {
+        const loadingTask = window.pdfjsLib.getDocument(pdfUrl);
+        const pdfDoc = await loadingTask.promise;
+        if (!isMounted) return;
+
+        const container = containerRef.current;
+        if (container) container.innerHTML = ''; // 清空舊畫布
+
+        // 逐頁渲染為獨立的 Canvas 圖片，達成完美的上下捲動
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          const page = await pdfDoc.getPage(i);
+          // 適度放大以確保高解析度清晰
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          canvas.className = 'w-full mb-3 shadow-md bg-white max-w-full h-auto'; 
+          await page.render({ canvasContext: context, viewport }).promise;
+          if (isMounted && container) container.appendChild(canvas);
+        }
+      } catch (e) {
+        console.error("PDF 解析失敗", e);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    if (pdfUrl) loadPdf();
+    return () => { isMounted = false; };
+  }, [pdfUrl]);
+
+  return (
+    <div className="w-full h-full overflow-y-auto p-4 bg-gray-800 flex flex-col items-center" ref={containerRef} style={{ WebkitOverflowScrolling: 'touch' }}>
+      {isLoading && <div className="text-white text-center mt-10 font-bold">📄 正在解析 PDF 題目頁面中...</div>}
+    </div>
+  );
+};
+
 export default function App() {
+  // --- 補回遺失的 isDesktop 變數 ---
+  const isDesktop = useMemo(() => !(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)), []);
+
   const [user, setUser] = useState(null);
   const [records, setRecords] = useState([]);
   const [setupTab, setSetupTab] = useState('new');
