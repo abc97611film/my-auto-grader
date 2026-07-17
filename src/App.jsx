@@ -1065,13 +1065,13 @@ export default function App() {
                     )}
                   </div>
                   <div className="pl-2">
-                    <div className="text-xs text-gray-500 mb-1">您的答案</div>
+                    <div className="text-xs text-gray-500 mb-1 whitespace-nowrap">您的答案</div>
                     <div className={`font-bold text-lg whitespace-nowrap ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</div>
                   </div>
                 </div>
                 {!item.isCorrect && (
                   <div className="text-right pl-4 border-l border-red-200">
-                    <div className="text-xs text-gray-500 mb-1">正確答案</div>
+                    <div className="text-xs text-gray-500 mb-1 whitespace-nowrap">正確答案</div>
                     <div className={`font-bold ${item.correctAns.length > 2 ? 'text-sm' : 'text-lg'} text-green-600 whitespace-nowrap`}>{item.correctAns}</div>
                   </div>
                 )}
