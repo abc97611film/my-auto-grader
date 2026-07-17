@@ -3,6 +3,99 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
+// --- 解決蘋果 Safari / iPadOS 無法捲動 PDF 的自訂渲染器 ---
+const PdfViewer = ({ pdfUrl }) => {
+  const containerRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!pdfUrl) return;
+    let isMounted = true;
+    setLoading(true);
+
+    const loadPdf = async () => {
+      try {
+        // 動態載入 PDF.js 核心庫 (避開需要 npm install)
+        if (!window.pdfjsLib) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+          window.pdfjsLib = window['pdfjs-dist/build/pdf'];
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+        }
+        if (!isMounted) return;
+
+        // 解析 Base64
+        const base64Marker = ';base64,';
+        const base64Index = pdfUrl.indexOf(base64Marker);
+        if (base64Index === -1) throw new Error("無效的 PDF 格式");
+        
+        const base64 = pdfUrl.substring(base64Index + base64Marker.length);
+        const raw = atob(base64);
+        const uint8Array = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) {
+          uint8Array[i] = raw.charCodeAt(i);
+        }
+
+        // 使用 PDF.js 載入文件
+        const loadingTask = window.pdfjsLib.getDocument({ data: uint8Array });
+        const pdf = await loadingTask.promise;
+        if (!isMounted) return;
+
+        const container = containerRef.current;
+        if (container) container.innerHTML = ''; 
+
+        // 一頁一頁渲染成 Canvas，徹底解決 iOS iframe 鎖死第一頁的 Bug
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          if (!isMounted) break;
+          const page = await pdf.getPage(pageNum);
+          // 使用 2.0 高解析度渲染，透過 CSS 縮小，確保 Retina 螢幕字體清晰
+          const viewport = page.getViewport({ scale: 2.0 }); 
+          
+          const wrapper = document.createElement('div');
+          wrapper.className = 'mb-4 shadow-lg w-full bg-white';
+          
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          canvas.style.width = '100%';
+          canvas.style.height = 'auto';
+          canvas.style.display = 'block';
+          
+          wrapper.appendChild(canvas);
+          if (container) container.appendChild(wrapper);
+          
+          await page.render({ canvasContext: context, viewport: viewport }).promise;
+        }
+        if (isMounted) setLoading(false);
+      } catch (e) {
+        console.error("PDF 渲染失敗:", e);
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    loadPdf();
+    return () => { isMounted = false; };
+  }, [pdfUrl]);
+
+  return (
+    <div className="w-full h-full overflow-y-auto bg-gray-800 p-2 md:p-4 relative" style={{ WebkitOverflowScrolling: 'touch' }}>
+      {loading && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-gray-800 z-10">
+           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+           <p className="font-bold">正在為您高畫質解析考卷...</p>
+        </div>
+      )}
+      <div ref={containerRef} className="flex flex-col items-center w-full max-w-4xl mx-auto"></div>
+    </div>
+  );
+};
+
 // --- Firebase 初始化區塊 ---
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
@@ -216,27 +309,6 @@ export default function App() {
         setPdfUrl(event.target.result); 
       };
       reader.readAsDataURL(file);
-    }
-  };
-
-  // --- 手機版專用：將 Base64 轉換回實體 Blob 檔案以原生開啟 ---
-  const handleOpenMobilePdf = () => {
-    if (!pdfUrl) return;
-    try {
-      const arr = pdfUrl.split(',');
-      const mime = arr[0].match(/:(.*?);/)[1];
-      const bstr = atob(arr[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      while(n--){
-          u8arr[n] = bstr.charCodeAt(n);
-      }
-      const blob = new Blob([u8arr], {type: mime});
-      const blobUrl = URL.createObjectURL(blob);
-      window.open(blobUrl, '_blank');
-    } catch (e) {
-      console.error("PDF 開啟失敗:", e);
-      window.open(pdfUrl, '_blank'); // 備用方案
     }
   };
 
@@ -1116,27 +1188,12 @@ export default function App() {
 
       {currentPage !== 'setup' && !isPaused && (
         <>
-          {/* 左側 / 上方：PDF 題目瀏覽區 */}
+          {/* 左側 / 上方：使用全新的 PdfViewer 取代殘缺的 iframe */}
           <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col relative z-0 overflow-hidden">
             {pdfUrl ? (
-              <>
-                {/* --- 新增：手機版專屬原生開啟 PDF 按鈕 --- */}
-                <div className="md:hidden bg-gray-900 p-2 flex justify-between items-center shrink-0 shadow-md z-10 w-full">
-                  <span className="text-gray-400 text-xs">若無法滑動題目：</span>
-                  <button
-                    onClick={handleOpenMobilePdf}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg shadow-sm text-xs font-bold flex items-center gap-1"
-                  >
-                    <span>📥 點此全螢幕開啟</span>
-                  </button>
-                </div>
-                
-                <div className="flex-1 w-full h-full overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-                  <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
-                </div>
-              </>
+              <PdfViewer pdfUrl={pdfUrl} />
             ) : (
-              <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
+              <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%] mx-auto my-auto">
                 <span className="text-4xl mb-4">📄</span>
                 <p className="mb-2 font-bold text-lg text-white">尚未載入題目 PDF</p>
                 <p className="mb-6 text-sm text-gray-400">若有需要，可於此重新上傳以供對照</p>
