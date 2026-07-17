@@ -219,6 +219,27 @@ export default function App() {
     }
   };
 
+  // --- 手機版專用：將 Base64 轉換回實體 Blob 檔案以原生開啟 ---
+  const handleOpenMobilePdf = () => {
+    if (!pdfUrl) return;
+    try {
+      const arr = pdfUrl.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while(n--){
+          u8arr[n] = bstr.charCodeAt(n);
+      }
+      const blob = new Blob([u8arr], {type: mime});
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+    } catch (e) {
+      console.error("PDF 開啟失敗:", e);
+      window.open(pdfUrl, '_blank'); // 備用方案
+    }
+  };
+
   const parseAnswers = (text) => {
     const halfWidthText = text.replace(/[Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
     return halfWidthText.replace(/[^a-zA-Z#]/g, '').toUpperCase().split('');
@@ -239,14 +260,12 @@ export default function App() {
     let notesText = '';
     const newSpecialRules = {};
 
-    // 1. 切割出備註區塊（加上冒號判斷，避免切到標頭的「詳見備註」）
     const firstNoteIndex = rawAnswers.search(/備\s*註\s*[：:]/);
     if (firstNoteIndex !== -1) {
       answersText = rawAnswers.substring(0, firstNoteIndex);
       notesText = rawAnswers.substring(firstNoteIndex);
     }
     
-    // 2. 過濾掉官方標頭常見的干擾字眼（特別是標頭裡的 # 號與卷別）
     answersText = answersText.replace(/答案標註#者/g, '');
     answersText = answersText.replace(/[A-Z][卷組]/gi, ''); 
     
@@ -1098,28 +1117,23 @@ export default function App() {
       {currentPage !== 'setup' && !isPaused && (
         <>
           {/* 左側 / 上方：PDF 題目瀏覽區 */}
-          <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
+          <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col relative z-0 overflow-hidden">
             {pdfUrl ? (
               <>
-                {/* 加上 overflow-auto 與 WebkitOverflowScrolling 嘗試拯救部分 Android 的滑動 */}
-                <div className="w-full h-full overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-                  <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
+                {/* --- 新增：手機版專屬原生開啟 PDF 按鈕 --- */}
+                <div className="md:hidden bg-gray-900 p-2 flex justify-between items-center shrink-0 shadow-md z-10 w-full">
+                  <span className="text-gray-400 text-xs">若無法滑動題目：</span>
+                  <button
+                    onClick={handleOpenMobilePdf}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg shadow-sm text-xs font-bold flex items-center gap-1"
+                  >
+                    <span>📥 點此全螢幕開啟</span>
+                  </button>
                 </div>
                 
-                {/* 手機版專用浮動按鈕：解決行動版瀏覽器 iframe 無法滾動 PDF 的限制 */}
-                <button
-                  onClick={() => {
-                    const link = document.createElement('a');
-                    link.href = pdfUrl;
-                    link.download = '題目卷.pdf';
-                    link.target = '_blank';
-                    link.click();
-                  }}
-                  className="md:hidden absolute top-4 right-4 bg-blue-600/90 hover:bg-blue-700 text-white px-3 py-2 rounded-lg shadow-xl text-xs font-bold border border-blue-500 backdrop-blur-md flex items-center gap-1 z-50"
-                >
-                  <span className="text-base">📥</span>
-                  <span>完整開啟 / 放大題目</span>
-                </button>
+                <div className="flex-1 w-full h-full overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                  <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
+                </div>
               </>
             ) : (
               <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
