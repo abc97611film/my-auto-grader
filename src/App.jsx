@@ -3,6 +3,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
+// --- Firebase 初始化區塊 ---
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     return JSON.parse(__firebase_config);
@@ -43,6 +44,7 @@ const MARK_OPTIONS = [
 ];
 const ALPHABET = ['A', 'B', 'C', 'D', 'E'];
 
+// --- 時間格式化工具 ---
 const formatTime = (totalSeconds) => {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
@@ -51,7 +53,7 @@ const formatTime = (totalSeconds) => {
   return `${m}:${s}`;
 };
 
-// --- 補回遺失的 PdfViewer：利用 PDF.js 破解 iOS 無法滑動的 Bug ---
+// --- PDF.js 安全渲染引擎 (防 iOS 記憶體爆炸崩潰版) ---
 const PdfViewer = ({ pdfUrl }) => {
   const containerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,7 +62,6 @@ const PdfViewer = ({ pdfUrl }) => {
     let isMounted = true;
     const loadPdf = async () => {
       setIsLoading(true);
-      // 動態載入 Mozilla 的 PDF.js 引擎
       if (!window.pdfjsLib) {
         await new Promise((resolve) => {
           const script = document.createElement('script');
@@ -69,32 +70,60 @@ const PdfViewer = ({ pdfUrl }) => {
             window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
             resolve();
           };
+          script.onerror = resolve; // 若載入失敗不卡死
           document.body.appendChild(script);
         });
       }
 
-      if (!isMounted) return;
+      if (!isMounted || !window.pdfjsLib) return;
 
       try {
-        const loadingTask = window.pdfjsLib.getDocument(pdfUrl);
+        let pdfSource = pdfUrl;
+        // 將極長的 Base64 安全解碼轉為 Uint8Array，避免塞爆 iOS Safari 的 URL 記憶體解析上限
+        if (typeof pdfUrl === 'string' && pdfUrl.startsWith('data:')) {
+          const base64String = pdfUrl.split(',')[1];
+          const binaryString = atob(base64String);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          pdfSource = { data: bytes };
+        }
+
+        const loadingTask = window.pdfjsLib.getDocument(pdfSource);
         const pdfDoc = await loadingTask.promise;
         if (!isMounted) return;
 
         const container = containerRef.current;
-        if (container) container.innerHTML = ''; // 清空舊畫布
+        if (container) container.innerHTML = ''; 
 
-        // 逐頁渲染為獨立的 Canvas 圖片，達成完美的上下捲動
         for (let i = 1; i <= pdfDoc.numPages; i++) {
+          if (!isMounted) break;
           const page = await pdfDoc.getPage(i);
-          // 適度放大以確保高解析度清晰
-          const viewport = page.getViewport({ scale: 1.5 });
+          
+          // 手機稍微降載縮放比以省記憶體，平板維持高解析
+          const scale = window.innerWidth < 768 ? 1.2 : 1.5;
+          const viewport = page.getViewport({ scale });
+          
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
           canvas.height = viewport.height;
           canvas.width = viewport.width;
-          canvas.className = 'w-full mb-3 shadow-md bg-white max-w-full h-auto'; 
+          
           await page.render({ canvasContext: context, viewport }).promise;
-          if (isMounted && container) container.appendChild(canvas);
+          
+          if (isMounted && container) {
+            // 【關鍵修復】：將吃記憶體的 Canvas 轉壓成輕量 JPEG 圖片，避免頁數過多時崩潰白畫面
+            const img = document.createElement('img');
+            img.src = canvas.toDataURL('image/jpeg', 0.8);
+            img.className = 'w-full mb-3 shadow-md bg-white max-w-full h-auto';
+            container.appendChild(img);
+            
+            // 轉完圖片後，瞬間釋放清除該 Canvas 的記憶體佔用
+            canvas.width = 0;
+            canvas.height = 0;
+          }
         }
       } catch (e) {
         console.error("PDF 解析失敗", e);
@@ -115,8 +144,15 @@ const PdfViewer = ({ pdfUrl }) => {
 };
 
 export default function App() {
-  // --- 補回遺失的 isDesktop 變數 ---
-  const isDesktop = useMemo(() => !(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)), []);
+  // --- 關鍵修復：完美揪出偽裝成 Mac 的 iOS 13+ iPad ---
+  const isDesktop = useMemo(() => {
+    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const isMac = /Macintosh/i.test(navigator.userAgent);
+    // 只要有觸控點且是 Mobile 或是 Mac，就歸類為平板/手機
+    const isPadOrMobile = isMobile || (isMac && isTouch);
+    return !isPadOrMobile;
+  }, []);
 
   const [user, setUser] = useState(null);
   const [records, setRecords] = useState([]);
@@ -307,7 +343,7 @@ export default function App() {
       notesText = rawAnswers.substring(firstNoteIndex);
     }
     
-    answersText = answersText.replace(/答案標註#者.*?備註。/g, '');
+    answersText = answersText.replace(/答案標註#者/g, '');
     answersText = answersText.replace(/[A-Z][卷組]/gi, ''); 
     
     const noteRegex = /第\s*(\d+)\s*題(.*?)(?=第\s*\d+\s*題|$)/gs;
