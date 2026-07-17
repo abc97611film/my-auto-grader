@@ -3,7 +3,96 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
+// --- 解決蘋果 Safari / iPadOS 無法捲動 PDF 的自訂渲染器 ---
+const PdfViewer = ({ pdfUrl }) => {
+  const containerRef = useRef(null);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    if (!pdfUrl) return;
+    let isMounted = true;
+    setLoading(true);
+
+    const loadPdf = async () => {
+      try {
+        if (!window.pdfjsLib) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+          window.pdfjsLib = window['pdfjs-dist/build/pdf'];
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+        }
+        if (!isMounted) return;
+
+        const base64Marker = ';base64,';
+        const base64Index = pdfUrl.indexOf(base64Marker);
+        if (base64Index === -1) throw new Error("無效的 PDF 格式");
+        
+        const base64 = pdfUrl.substring(base64Index + base64Marker.length);
+        const raw = atob(base64);
+        const uint8Array = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) {
+          uint8Array[i] = raw.charCodeAt(i);
+        }
+
+        const loadingTask = window.pdfjsLib.getDocument({ data: uint8Array });
+        const pdf = await loadingTask.promise;
+        if (!isMounted) return;
+
+        const container = containerRef.current;
+        if (container) container.innerHTML = ''; 
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          if (!isMounted) break;
+          const page = await pdf.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 2.0 }); 
+          
+          const wrapper = document.createElement('div');
+          wrapper.className = 'mb-4 shadow-lg w-full bg-white';
+          
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          canvas.style.width = '100%';
+          canvas.style.height = 'auto';
+          canvas.style.display = 'block';
+          
+          wrapper.appendChild(canvas);
+          if (container) container.appendChild(wrapper);
+          
+          await page.render({ canvasContext: context, viewport: viewport }).promise;
+        }
+        if (isMounted) setLoading(false);
+      } catch (e) {
+        console.error("PDF 渲染失敗:", e);
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    loadPdf();
+    return () => { isMounted = false; };
+  }, [pdfUrl]);
+
+  return (
+    <div className="w-full h-full overflow-y-auto bg-gray-800 p-2 md:p-4 relative" style={{ WebkitOverflowScrolling: 'touch' }}>
+      {loading && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-gray-800 z-10">
+           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+           <p className="font-bold">正在為您高畫質解析考卷...</p>
+        </div>
+      )}
+      {/* 移除了 max-w-4xl 確保左右完全填滿 */}
+      <div ref={containerRef} className="flex flex-col items-center w-full mx-auto"></div>
+    </div>
+  );
+};
+
+// --- Firebase 初始化區塊 ---
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     return JSON.parse(__firebase_config);
@@ -53,15 +142,6 @@ const formatTime = (totalSeconds) => {
 };
 
 export default function App() {
-  // 精準判定，破解 iPadOS 偽裝成 Mac 的問題
-  const isDesktop = useMemo(() => {
-    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const isMac = /Macintosh/i.test(navigator.userAgent);
-    const isPadOrMobile = isMobile || (isMac && isTouch);
-    return !isPadOrMobile;
-  }, []);
-
   const [user, setUser] = useState(null);
   const [records, setRecords] = useState([]);
   const [setupTab, setSetupTab] = useState('new');
@@ -72,7 +152,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [pdfUrl, setPdfUrl] = useState(null);
-  const [safePdfUrl, setSafePdfUrl] = useState(null);
+  const [isDesktop, setIsDesktop] = useState(false); // 新增：電腦版偵測狀態
 
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -98,18 +178,16 @@ export default function App() {
   const [feedbackModal, setFeedbackModal] = useState({ isOpen: false, isCorrect: false, correctAnswer: '' });
   const [showMarksModal, setShowMarksModal] = useState(false);
 
-  // PDF.js 輕量防崩潰單頁渲染狀態
-  const [pdfDoc, setPdfDoc] = useState(null);
-  const [pdfPageNum, setPdfPageNum] = useState(1);
-  const [pdfTotalPages, setPdfTotalPages] = useState(0);
-  const [pdfScale, setPdfScale] = useState(1.0);
-  const canvasRef = useRef(null);
-
   useEffect(() => {
+    // 偵測是否為電腦裝置 (排除 iOS, Android 及觸控 Mac)
+    const checkDesktop = !(/iPad|iPhone|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+    setIsDesktop(checkDesktop);
+
     if (!auth) {
       setAuthError("尚未填寫 Firebase 金鑰 (apiKey等)，請檢查 VS Code 裡的程式碼是否已填妥！");
       return;
     }
+    
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
@@ -141,84 +219,6 @@ export default function App() {
     });
     return () => unsubscribe();
   }, [user]);
-
-  // 安全轉換長 Base64 為短小 Blob URL 防止崩潰
-  useEffect(() => {
-    let objectUrl = null;
-    if (!pdfUrl) {
-      setSafePdfUrl(null);
-      return;
-    }
-    if (pdfUrl.startsWith('data:')) {
-      fetch(pdfUrl).then(res => res.blob()).then(blob => {
-          objectUrl = URL.createObjectURL(blob);
-          setSafePdfUrl(objectUrl);
-        }).catch(e => {
-          console.error("Blob conversion error:", e);
-          setSafePdfUrl(pdfUrl);
-        });
-    } else {
-      setSafePdfUrl(pdfUrl);
-    }
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [pdfUrl]);
-
-  useEffect(() => {
-    if (safePdfUrl && !isDesktop && currentPage !== 'setup') {
-      const loadPdfJs = async () => {
-        if (!window.pdfjsLib) {
-          await new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
-            script.onload = () => {
-              window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-              resolve();
-            };
-            script.onerror = reject;
-            document.body.appendChild(script);
-          });
-        }
-        try {
-          const loadingTask = window.pdfjsLib.getDocument(safePdfUrl);
-          const pdf = await loadingTask.promise;
-          setPdfDoc(pdf);
-          setPdfTotalPages(pdf.numPages);
-          setPdfPageNum(1);
-          
-          // 針對平板/手機自動適配舒適縮放比例
-          const page = await pdf.getPage(1);
-          const viewport = page.getViewport({ scale: 1.0 });
-          const screenW = window.innerWidth * (window.innerWidth >= 768 ? 0.78 : 1); 
-          let optimalScale = (screenW - 20) / viewport.width;
-          if (optimalScale > 2.5) optimalScale = 2.5;
-          if (optimalScale < 0.5) optimalScale = 1.0;
-          setPdfScale(optimalScale);
-        } catch (e) { console.error("PDF Load Error:", e); }
-      };
-      loadPdfJs();
-    }
-  }, [safePdfUrl, isDesktop, currentPage]);
-
-  useEffect(() => {
-    let renderTask = null;
-    if (pdfDoc && canvasRef.current && !isDesktop) {
-      pdfDoc.getPage(pdfPageNum).then(page => {
-        const viewport = page.getViewport({ scale: pdfScale });
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const context = canvas.getContext('2d');
-        const outputScale = window.devicePixelRatio || 1;
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = Math.floor(viewport.width) + "px";
-        canvas.style.height = Math.floor(viewport.height) + "px";
-        const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
-        
-        renderTask = page.render({ canvasContext: context, transform: transform, viewport: viewport });
-      }).catch(e => console.error("Page Render Error", e));
-    }
-    return () => { if (renderTask && renderTask.cancel) renderTask.cancel(); };
-  }, [pdfDoc, pdfPageNum, pdfScale, isDesktop]);
 
   useEffect(() => {
     let timer;
@@ -253,10 +253,22 @@ export default function App() {
     if (currentPage === 'quiz' && currentRecordId && db && user && !isPaused) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
       setDoc(docRef, {
-        recordName, totalQuestions, optionCount, pointsPerQuestion, gradingMode,
-        correctAnswers, userAnswers, marks, specialRules, timerMode, timeLimitMinutes,
-        pdfUrl, elapsedTime: elapsedTimeRef.current, currentQuestionIndex,
-        status: 'in-progress', updatedAt: Date.now()
+        recordName,
+        totalQuestions,
+        optionCount,
+        pointsPerQuestion,
+        gradingMode,
+        correctAnswers,
+        userAnswers,
+        marks,
+        specialRules,
+        timerMode,
+        timeLimitMinutes,
+        pdfUrl, 
+        elapsedTime: elapsedTimeRef.current,
+        currentQuestionIndex,
+        status: 'in-progress',
+        updatedAt: Date.now()
       }, { merge: true }).catch(console.error);
     }
   }, [userAnswers, marks, currentQuestionIndex, currentPage, currentRecordId, user, db, recordName, specialRules, isPaused, pdfUrl, timerMode, timeLimitMinutes]);
@@ -268,21 +280,32 @@ export default function App() {
     try {
       await signInWithPopup(auth, provider);
     } catch (error) {
-      if (isStandalone) setAuthError(`【iOS 限制提醒】蘋果系統不允許在「獨立 App」中進行 Google 登入。請先將此 App 從桌面刪除，開啟 Safari 瀏覽器進入本網站並完成登入後，再重新加入主畫面！`);
-      else setAuthError(`登入失敗或彈出視窗被阻擋。(錯誤碼: ${error.code})`);
+      console.error("Google 登入失敗:", error);
+      if (isStandalone) {
+        setAuthError(`【iOS 限制提醒】\n蘋果系統不允許在「獨立 App」中進行 Google 登入。\n👉 請先將此 App 從桌面刪除\n👉 開啟 Safari 瀏覽器進入本網站並完成登入\n👉 登入後再重新「加入主畫面」即可！`);
+      } else {
+        setAuthError(`登入失敗或彈出視窗被阻擋。請確保您使用 Safari 或 Chrome 瀏覽器開啟，且未處於無痕模式！(錯誤碼: ${error.code})`);
+      }
     }
   };
 
   const handleLogout = async () => {
     if (!auth) return;
-    try { await signOut(auth); window.location.reload(); } catch (error) {}
+    try {
+      await signOut(auth);
+      window.location.reload(); 
+    } catch (error) {
+      console.error("登出失敗:", error);
+    }
   };
 
   const handlePdfUpload = (e) => {
     const file = e.target.files[0];
     if (file && file.type === 'application/pdf') {
       const reader = new FileReader();
-      reader.onload = (event) => setPdfUrl(event.target.result);
+      reader.onload = (event) => {
+        setPdfUrl(event.target.result); 
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -293,9 +316,13 @@ export default function App() {
   };
 
   const handleStart = () => {
-    if (!recordName.trim()) { setSetupError('請輸入本次作答紀錄名稱，以利後續查看進度。'); return; }
+    if (!recordName.trim()) {
+      setSetupError('請輸入本次作答紀錄名稱，以利後續查看進度。');
+      return;
+    }
     const qCount = parseInt(totalQuestions, 10);
     const pts = parseFloat(pointsPerQuestion);
+    
     if (!qCount || qCount <= 0) { setSetupError('請輸入有效的總題數。'); return; }
     if (!pts || pts <= 0) { setSetupError('請輸入有效的每題配分。'); return; }
 
@@ -309,49 +336,84 @@ export default function App() {
       notesText = rawAnswers.substring(firstNoteIndex);
     }
     
-    answersText = answersText.replace(/答案標註#者/g, '').replace(/[A-Z][卷組]/gi, ''); 
+    answersText = answersText.replace(/答案標註#者.*?備註。/g, '');
+    answersText = answersText.replace(/[A-Z][卷組]/gi, ''); 
+    
     const noteRegex = /第\s*(\d+)\s*題(.*?)(?=第\s*\d+\s*題|$)/gs;
     let match;
     while ((match = noteRegex.exec(notesText)) !== null) {
       const qIdx = parseInt(match[1], 10) - 1; 
       if (qIdx >= 0 && qIdx < qCount) {
         let content = match[2].replace(/[Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).toUpperCase();
-        if (content.includes('一律給分') || content.includes('送分')) newSpecialRules[qIdx] = { type: 'ALL' };
-        else {
+        if (content.includes('一律給分') || content.includes('送分')) {
+          newSpecialRules[qIdx] = { type: 'ALL' };
+        } else {
           const letters = content.match(/[A-Z]/g);
-          if (letters) newSpecialRules[qIdx] = { type: 'MULTI', options: [...new Set(letters)] }; 
+          if (letters) {
+            newSpecialRules[qIdx] = { type: 'MULTI', options: [...new Set(letters)] }; 
+          }
         }
       }
     }
 
     const parsedAnswers = parseAnswers(answersText);
-    if (parsedAnswers.length < qCount) { setSetupError(`正確答案數量不足。偵測到 ${parsedAnswers.length} 個有效答案。`); return; }
+    if (parsedAnswers.length < qCount) {
+      setSetupError(`正確答案數量不足。設定了 ${qCount} 題，但只偵測到 ${parsedAnswers.length} 個有效答案 (含英文字母或 # 號)。`);
+      return;
+    }
 
     const validLetters = [...ALPHABET.slice(0, optionCount), '#'];
     const invalidAnswerIndex = parsedAnswers.slice(0, qCount).findIndex(ans => !validLetters.includes(ans));
-    if (invalidAnswerIndex !== -1) { setSetupError(`無效答案 '${parsedAnswers[invalidAnswerIndex]}' 於第 ${invalidAnswerIndex + 1} 題。`); return; }
+    if (invalidAnswerIndex !== -1) {
+      setSetupError(`偵測到無效答案 '${parsedAnswers[invalidAnswerIndex]}' 於第 ${invalidAnswerIndex + 1} 題。請確認字母是否符合選項數量。`);
+      return;
+    }
 
     setSetupError('');
     
     if (editingRecordId && db && user) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', editingRecordId);
       setDoc(docRef, {
-        recordName, totalQuestions: qCount, optionCount, pointsPerQuestion: pts, gradingMode,
-        correctAnswers: parsedAnswers.slice(0, qCount), specialRules: newSpecialRules,
-        timerMode, timeLimitMinutes: timerMode === 'down' ? timeLimitMinutes : '', pdfUrl, updatedAt: Date.now()
+        recordName,
+        totalQuestions: qCount,
+        optionCount,
+        pointsPerQuestion: pts,
+        gradingMode,
+        correctAnswers: parsedAnswers.slice(0, qCount),
+        specialRules: newSpecialRules,
+        timerMode,
+        timeLimitMinutes: timerMode === 'down' ? timeLimitMinutes : '',
+        pdfUrl,
+        updatedAt: Date.now()
       }, { merge: true }).then(() => {
-        setEditingRecordId(null); setSetupTab('history'); setRawAnswers(''); setTotalQuestions(''); setRecordName(''); setPdfUrl(null);
+        setEditingRecordId(null);
+        setSetupTab('history');
+        setRawAnswers('');
+        setTotalQuestions('');
+        setRecordName('');
+        setPdfUrl(null);
       }).catch(console.error);
       return;
     }
 
-    setCorrectAnswers(parsedAnswers.slice(0, qCount)); setUserAnswers({}); setMarks({}); setSpecialRules(newSpecialRules);
-    setCurrentQuestionIndex(0); setIsPaused(false); setElapsedTime(0); elapsedTimeRef.current = 0; setPdfPageNum(1);
+    setCorrectAnswers(parsedAnswers.slice(0, qCount));
+    setUserAnswers({});
+    setMarks({});
+    setSpecialRules(newSpecialRules);
+    setCurrentQuestionIndex(0);
+    setIsPaused(false);
+    setElapsedTime(0);
+    elapsedTimeRef.current = 0;
     
-    setCurrentRecordId(Date.now().toString()); setCurrentPage('quiz');
+    const newId = Date.now().toString();
+    setCurrentRecordId(newId);
+    setCurrentPage('quiz');
   };
 
-  const handleSelectAnswer = (option) => setUserAnswers(prev => ({ ...prev, [currentQuestionIndex]: option }));
+  const handleSelectAnswer = (option) => {
+    setUserAnswers(prev => ({ ...prev, [currentQuestionIndex]: option }));
+  };
+
   const handleToggleMark = (markId) => {
     setMarks(prev => {
       const newMarks = { ...prev };
@@ -361,7 +423,10 @@ export default function App() {
     });
   };
 
-  const proceedToNext = (isLast) => { if (isLast) setCurrentPage('review'); else setCurrentQuestionIndex(prev => prev + 1); };
+  const proceedToNext = (isLast) => {
+    if (isLast) setCurrentPage('review');
+    else setCurrentQuestionIndex(prev => prev + 1);
+  };
 
   const handleNext = () => {
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
@@ -369,84 +434,163 @@ export default function App() {
       const userAns = userAnswers[currentQuestionIndex];
       const correctAns = correctAnswers[currentQuestionIndex];
       const rule = specialRules[currentQuestionIndex];
-      let isCorrect = false; let displayCorrectAns = correctAns;
+      
+      let isCorrect = false;
+      let displayCorrectAns = correctAns;
+
       if (rule) {
-        if (rule.type === 'ALL') { isCorrect = true; displayCorrectAns = '一律給分'; } 
-        else if (rule.type === 'MULTI') { isCorrect = rule.options.includes(userAns); displayCorrectAns = rule.options.join(' 或 '); }
-      } else isCorrect = userAns === correctAns;
+        if (rule.type === 'ALL') {
+          isCorrect = true;
+          displayCorrectAns = '一律給分';
+        } else if (rule.type === 'MULTI') {
+          isCorrect = rule.options.includes(userAns);
+          displayCorrectAns = rule.options.join(' 或 ');
+        }
+      } else {
+        isCorrect = userAns === correctAns;
+      }
+
       setFeedbackModal({ isOpen: true, isCorrect, correctAnswer: displayCorrectAns, isLast: isLastQuestion });
-    } else proceedToNext(isLastQuestion);
+    } else {
+      proceedToNext(isLastQuestion);
+    }
   };
 
   const handleCloseFeedback = () => {
-    const isLast = feedbackModal.isLast; setFeedbackModal({ isOpen: false, isCorrect: false, correctAnswer: '' }); proceedToNext(isLast);
+    const isLast = feedbackModal.isLast;
+    setFeedbackModal({ isOpen: false, isCorrect: false, correctAnswer: '' });
+    proceedToNext(isLast);
   };
 
   const handleSubmit = () => {
     if (db && user && currentRecordId) {
       const docRef = doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', currentRecordId);
-      setDoc(docRef, { status: 'completed', elapsedTime: elapsedTimeRef.current, updatedAt: Date.now() }, { merge: true }).catch(console.error);
+      setDoc(docRef, { 
+        status: 'completed', 
+        elapsedTime: elapsedTimeRef.current, 
+        updatedAt: Date.now() 
+      }, { merge: true }).catch(console.error);
     }
-    setIsPaused(false); setCurrentPage('result');
+    setIsPaused(false);
+    setCurrentPage('result');
   };
 
   const resultData = useMemo(() => {
     if (!correctAnswers || correctAnswers.length === 0) return null;
     let correctCount = 0;
     const details = correctAnswers.map((correctAns, index) => {
-      const userAns = userAnswers[index]; const rule = specialRules[index];
-      let isCorrect = false; let displayCorrectAns = correctAns;
+      const userAns = userAnswers[index];
+      const rule = specialRules[index];
+      
+      let isCorrect = false;
+      let displayCorrectAns = correctAns;
+
       if (rule) {
-        if (rule.type === 'ALL') { isCorrect = true; displayCorrectAns = '一律給分'; } 
-        else if (rule.type === 'MULTI') { isCorrect = !!userAns && rule.options.includes(userAns); displayCorrectAns = rule.options.join(' 或 '); }
-      } else isCorrect = userAns === correctAns;
+        if (rule.type === 'ALL') {
+          isCorrect = true; 
+          displayCorrectAns = '一律給分';
+        } else if (rule.type === 'MULTI') {
+          isCorrect = !!userAns && rule.options.includes(userAns);
+          displayCorrectAns = rule.options.join(' 或 ');
+        }
+      } else {
+        isCorrect = userAns === correctAns;
+      }
 
       if (isCorrect) correctCount++;
       const markOpt = marks[index] ? MARK_OPTIONS.find(m => m.id === marks[index]) : null;
       return { questionNum: index + 1, userAns: userAns || '未作答', correctAns: displayCorrectAns, isCorrect, markOpt };
     });
-    return { score: correctCount * parseFloat(pointsPerQuestion), totalScore: correctAnswers.length * parseFloat(pointsPerQuestion), details };
+    return {
+      score: correctCount * parseFloat(pointsPerQuestion),
+      totalScore: correctAnswers.length * parseFloat(pointsPerQuestion),
+      details
+    };
   }, [correctAnswers, userAnswers, pointsPerQuestion, marks, specialRules]);
 
   const handleResumeRecord = (record) => {
-    setRecordName(record.recordName || ''); setTotalQuestions(record.totalQuestions); setOptionCount(record.optionCount);
-    setPointsPerQuestion(record.pointsPerQuestion); setGradingMode(record.gradingMode); setCorrectAnswers(record.correctAnswers);
-    setUserAnswers(record.userAnswers || {}); setMarks(record.marks || {}); setSpecialRules(record.specialRules || {});
-    setTimerMode(record.timerMode || 'up'); setTimeLimitMinutes(record.timeLimitMinutes || ''); setPdfUrl(record.pdfUrl || null);
+    setRecordName(record.recordName || '');
+    setTotalQuestions(record.totalQuestions);
+    setOptionCount(record.optionCount);
+    setPointsPerQuestion(record.pointsPerQuestion);
+    setGradingMode(record.gradingMode);
+    setCorrectAnswers(record.correctAnswers);
+    setUserAnswers(record.userAnswers || {});
+    setMarks(record.marks || {});
+    setSpecialRules(record.specialRules || {});
+    setTimerMode(record.timerMode || 'up');
+    setTimeLimitMinutes(record.timeLimitMinutes || '');
+    setPdfUrl(record.pdfUrl || null);
     setCurrentQuestionIndex(record.currentQuestionIndex || 0);
-    const loadedTime = record.elapsedTime || 0; setElapsedTime(loadedTime); elapsedTimeRef.current = loadedTime;
-    setIsPaused(false); setEditingRecordId(null); setCurrentRecordId(record.id); setPdfPageNum(1); setCurrentPage('quiz');
+    
+    const loadedTime = record.elapsedTime || 0;
+    setElapsedTime(loadedTime);
+    elapsedTimeRef.current = loadedTime;
+
+    setIsPaused(false);
+    setEditingRecordId(null);
+    setCurrentRecordId(record.id);
+    setCurrentPage('quiz');
   };
 
   const handleEditRecordSetup = (record) => {
-    setRecordName(record.recordName || ''); setTotalQuestions(record.totalQuestions || ''); setOptionCount(record.optionCount || 4);
-    setPointsPerQuestion(record.pointsPerQuestion || ''); setGradingMode(record.gradingMode || 'all-at-once'); setTimerMode(record.timerMode || 'up');
-    setTimeLimitMinutes(record.timeLimitMinutes || ''); setPdfUrl(record.pdfUrl || null);
+    setRecordName(record.recordName || '');
+    setTotalQuestions(record.totalQuestions || '');
+    setOptionCount(record.optionCount || 4);
+    setPointsPerQuestion(record.pointsPerQuestion || '');
+    setGradingMode(record.gradingMode || 'all-at-once');
+    setTimerMode(record.timerMode || 'up');
+    setTimeLimitMinutes(record.timeLimitMinutes || '');
+    setPdfUrl(record.pdfUrl || null);
+    
     let reconstructedAnswers = (record.correctAnswers || []).join('');
     if (record.specialRules && Object.keys(record.specialRules).length > 0) {
       reconstructedAnswers += '\n\n';
       Object.entries(record.specialRules).forEach(([idxStr, rule]) => {
         const num = parseInt(idxStr, 10) + 1;
-        if (rule.type === 'ALL') reconstructedAnswers += `備註：第${num}題一律給分。\n`;
-        else if (rule.type === 'MULTI') reconstructedAnswers += `備註：第${num}題答${rule.options.join('或')}者均給分。\n`;
+        if (rule.type === 'ALL') {
+          reconstructedAnswers += `備註：第${num}題一律給分。\n`;
+        } else if (rule.type === 'MULTI') {
+          reconstructedAnswers += `備註：第${num}題答${rule.options.join('或')}者均給分。\n`;
+        }
       });
     }
-    setRawAnswers(reconstructedAnswers); setEditingRecordId(record.id); setSetupTab('new');
+    setRawAnswers(reconstructedAnswers);
+    setEditingRecordId(record.id);
+    setSetupTab('new');
   };
 
   const handleViewResult = (record) => {
-    setRecordName(record.recordName || ''); setTotalQuestions(record.totalQuestions); setOptionCount(record.optionCount);
-    setPointsPerQuestion(record.pointsPerQuestion); setGradingMode(record.gradingMode); setCorrectAnswers(record.correctAnswers);
-    setUserAnswers(record.userAnswers || {}); setMarks(record.marks || {}); setSpecialRules(record.specialRules || {}); setPdfUrl(record.pdfUrl || null);
-    const loadedTime = record.elapsedTime || 0; setElapsedTime(loadedTime); elapsedTimeRef.current = loadedTime;
-    setCurrentRecordId(record.id); setCurrentPage('result');
+    setRecordName(record.recordName || '');
+    setTotalQuestions(record.totalQuestions);
+    setOptionCount(record.optionCount);
+    setPointsPerQuestion(record.pointsPerQuestion);
+    setGradingMode(record.gradingMode);
+    setCorrectAnswers(record.correctAnswers);
+    setUserAnswers(record.userAnswers || {});
+    setMarks(record.marks || {});
+    setSpecialRules(record.specialRules || {});
+    setPdfUrl(record.pdfUrl || null);
+    
+    const loadedTime = record.elapsedTime || 0;
+    setElapsedTime(loadedTime);
+    elapsedTimeRef.current = loadedTime;
+
+    setCurrentRecordId(record.id);
+    setCurrentPage('result');
   };
 
   const executeDelete = async () => {
     if (!db || !user || !deleteModalId) return;
     try {
       await deleteDoc(doc(db, 'artifacts', currentAppId, 'users', user.uid, 'quiz_records', deleteModalId));
-      if (editingRecordId === deleteModalId) { setEditingRecordId(null); setRawAnswers(''); setTotalQuestions(''); setRecordName(''); setPdfUrl(null); }
+      if (editingRecordId === deleteModalId) {
+        setEditingRecordId(null);
+        setRawAnswers('');
+        setTotalQuestions('');
+        setRecordName('');
+        setPdfUrl(null);
+      }
     } catch (e) { console.error("刪除失敗:", e); }
     setDeleteModalId(null);
   };
@@ -455,31 +599,69 @@ export default function App() {
     <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-xl p-6 flex flex-col max-h-[95vh] overflow-hidden relative z-10">
       <div className="flex justify-between items-center mb-4 shrink-0">
         <h1 className="text-xl font-bold text-gray-800">{editingRecordId ? '修改測驗設定' : '選擇題自動批改'}</h1>
-        {user && user.isAnonymous && <button onClick={handleGoogleLogin} className="text-xs bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-full hover:bg-blue-200 transition shadow-sm">👉 登入跨裝置同步</button>}
+        {user && user.isAnonymous && (
+          <button onClick={handleGoogleLogin} className="text-xs bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-full hover:bg-blue-200 transition shadow-sm">
+            👉 登入跨裝置同步
+          </button>
+        )}
         {user && !user.isAnonymous && (
           <div className="flex items-center space-x-2">
             <span className="text-xs text-gray-500 truncate max-w-[120px]">{user.email}</span>
-            <button onClick={handleLogout} className="text-xs bg-gray-200 text-gray-700 font-bold px-3 py-1.5 rounded-full hover:bg-gray-300 transition">登出</button>
+            <button onClick={handleLogout} className="text-xs bg-gray-200 text-gray-700 font-bold px-3 py-1.5 rounded-full hover:bg-gray-300 transition">
+              登出
+            </button>
           </div>
         )}
       </div>
+      
       <div className="flex border-b mb-6 shrink-0">
         <button onClick={() => { setSetupTab('new'); }} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'new' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
           {editingRecordId ? '📝 修改設定' : '📝 建立新測驗'}
         </button>
-        <button onClick={() => { if(editingRecordId) { if(confirm('確定要放棄修改回到歷史紀錄？')) { setEditingRecordId(null); setRecordName(''); setTotalQuestions(''); setRawAnswers(''); setPdfUrl(null); setSetupTab('history'); } } else { setSetupTab('history'); } }} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'history' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>📂 作答紀錄</button>
+        <button onClick={() => { if(editingRecordId) { if(confirm('正在修改設定中，確定要放棄修改並回到歷史紀錄？')) { setEditingRecordId(null); setRecordName(''); setTotalQuestions(''); setRawAnswers(''); setPdfUrl(null); setSetupTab('history'); } } else { setSetupTab('history'); } }} className={`flex-1 py-3 font-bold transition-colors ${setupTab === 'history' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>📂 作答紀錄</button>
       </div>
-      {authError && <div className="p-3 mb-4 bg-red-100 text-red-700 rounded-lg text-sm font-medium shrink-0 whitespace-pre-line">{authError}</div>}
-      {setupError && <div className="p-3 mb-4 bg-red-100 text-red-700 rounded-lg text-sm font-medium shrink-0">{setupError}</div>}
+
+      {authError && (
+        <div className="p-3 mb-4 bg-red-100 text-red-700 rounded-lg text-sm font-medium shrink-0 whitespace-pre-line">
+          {authError}
+        </div>
+      )}
+
+      {setupError && (
+        <div className="p-3 mb-4 bg-red-100 text-red-700 rounded-lg text-sm font-medium shrink-0">
+          {setupError}
+        </div>
+      )}
+
       {setupTab === 'new' && (
         <div className="space-y-4 overflow-y-auto pr-2 pb-4">
-          {editingRecordId && <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700 font-medium">⚠️ 正在修改歷史紀錄設定，將同步更新雲端資料。</div>}
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">本次作答紀錄名稱</label><input type="text" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={recordName} onChange={(e) => setRecordName(e.target.value)} /></div>
+          {editingRecordId && (
+            <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700 font-medium">
+              ⚠️ 您目前正在修改歷史紀錄的設定，儲存後會同步更新雲端標準答案與配置。
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">本次作答紀錄名稱</label>
+            <input 
+              type="text" 
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="例如: 第一次期中考練習"
+              value={recordName}
+              onChange={(e) => setRecordName(e.target.value)}
+            />
+          </div>
+          
           <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
             <label className="block text-sm font-bold text-blue-800 mb-1">上傳題目 PDF（將同步儲存至雲端隨身攜帶）</label>
-            <input type="file" accept="application/pdf" onChange={handlePdfUpload} className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer" />
+            <input 
+              type="file" 
+              accept="application/pdf"
+              onChange={handlePdfUpload}
+              className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+            />
             {pdfUrl && <span className="text-xs text-green-600 mt-2 block font-bold">✓ 題目 PDF 已儲存於雲端綁定</span>}
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">計時模式</label>
             <div className="grid grid-cols-2 gap-2">
@@ -487,19 +669,45 @@ export default function App() {
               <button type="button" onClick={() => setTimerMode('down')} className={`py-2 rounded-lg font-medium text-sm transition ${timerMode === 'down' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>倒計時</button>
             </div>
           </div>
+
           {timerMode === 'down' && (
             <div className="animate-scale-in">
               <label className="block text-sm font-medium text-gray-700 mb-1">考試時限（分鐘）</label>
-              <input type="text" inputMode="numeric" pattern="[0-9]*" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={timeLimitMinutes} onChange={(e) => setTimeLimitMinutes(e.target.value.replace(/[^0-9]/g, ''))} />
-              <span className="text-xs text-red-500 mt-1 block font-medium">※ 倒計時結束時強制交卷。</span>
+              <input 
+                type="text" inputMode="numeric" pattern="[0-9]*"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="例如: 60" value={timeLimitMinutes} onChange={(e) => setTimeLimitMinutes(e.target.value.replace(/[^0-9]/g, ''))}
+              />
+              <span className="text-xs text-red-500 mt-1 block font-medium">※ 倒計時結束時，系統將會強制儲存進度並自動交卷。</span>
             </div>
           )}
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">總題數</label><input type="text" inputMode="numeric" className="w-full p-3 border border-gray-300 rounded-lg outline-none" value={totalQuestions} onChange={(e) => setTotalQuestions(e.target.value.replace(/[^0-9]/g, ''))} /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">選項數量</label>
-            <div className="grid grid-cols-3 gap-2">{[3, 4, 5].map(num => (<button key={num} type="button" className={`py-2 rounded-lg font-medium transition ${optionCount === num ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setOptionCount(num)}>{num} 個</button>))}</div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">總題數</label>
+            <input 
+              type="text" inputMode="numeric" pattern="[0-9]*"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="例如: 50" value={totalQuestions} onChange={(e) => setTotalQuestions(e.target.value.replace(/[^0-9]/g, ''))}
+            />
           </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">每題配分</label><input type="text" inputMode="numeric" className="w-full p-3 border border-gray-300 rounded-lg outline-none" value={pointsPerQuestion} onChange={(e) => setPointsPerQuestion(e.target.value.replace(/[^0-9.]/g, ''))} /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">批改方式</label>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">選項數量</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[3, 4, 5].map(num => (
+                <button key={num} type="button" className={`py-2 rounded-lg font-medium transition ${optionCount === num ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setOptionCount(num)}>{num} 個</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">每題配分</label>
+            <input 
+              type="text" inputMode="numeric" pattern="[0-9.]*"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="例如: 2" value={pointsPerQuestion} onChange={(e) => setPointsPerQuestion(e.target.value.replace(/[^0-9.]/g, ''))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">批改方式</label>
             <div className="grid grid-cols-2 gap-2">
               <button type="button" className={`py-2 rounded-lg font-medium transition ${gradingMode === 'per-question' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setGradingMode('per-question')}>逐題批改</button>
               <button type="button" className={`py-2 rounded-lg font-medium transition ${gradingMode === 'all-at-once' ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setGradingMode('all-at-once')}>作答完一次批改</button>
@@ -507,25 +715,51 @@ export default function App() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">正確答案貼上區</label>
-            <textarea className="w-full p-3 border border-gray-300 rounded-lg h-24 focus:ring-2 focus:ring-blue-500 outline-none resize-none" placeholder="貼上文字即可。支援備註給分。" value={rawAnswers} onChange={(e) => setRawAnswers(e.target.value)} />
+            <textarea
+              className="w-full p-3 border border-gray-300 rounded-lg h-24 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+              placeholder="貼上文字即可。若有更正答案，請於文末加上備註（例如：備註：第34題一律給分、備註：第50題答A或B者均給分）"
+              value={rawAnswers} onChange={(e) => setRawAnswers(e.target.value)}
+            />
           </div>
-          <button onClick={handleStart} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition mt-2 shrink-0">{editingRecordId ? '儲存修改設定' : '開始作答'}</button>
+          <button onClick={handleStart} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition mt-2 shrink-0">
+            {editingRecordId ? '儲存修改設定' : '開始作答'}
+          </button>
         </div>
       )}
+
       {setupTab === 'history' && (
         <div className="flex-1 overflow-y-auto pr-2 space-y-3 pb-4">
           {!authError && !user && <div className="text-center text-gray-500 py-8">正在連線至雲端...</div>}
           {user && records.length === 0 && <div className="text-center text-gray-500 py-8 border-2 border-dashed border-gray-200 rounded-xl">目前還沒有任何紀錄喔！</div>}
+          
           {records.map(record => {
-            let displayStatus = 'in-progress'; let statusColor = 'bg-yellow-100 text-yellow-700'; let statusText = '作答中';
-            if (record.status === 'completed') { displayStatus = 'completed'; statusColor = 'bg-green-100 text-green-700'; statusText = '已完成'; } 
-            else if (!record.userAnswers || Object.keys(record.userAnswers).length === 0) { displayStatus = 'not-started'; statusColor = 'bg-red-100 text-red-700'; statusText = '未開始'; }
+            let displayStatus = 'in-progress';
+            let statusColor = 'bg-yellow-100 text-yellow-700';
+            let statusText = '作答中';
+
+            if (record.status === 'completed') {
+              displayStatus = 'completed';
+              statusColor = 'bg-green-100 text-green-700';
+              statusText = '已完成';
+            } else if (!record.userAnswers || Object.keys(record.userAnswers).length === 0) {
+              displayStatus = 'not-started';
+              statusColor = 'bg-red-100 text-red-700';
+              statusText = '未開始';
+            }
+
             let scoreDisplay = null;
             if (displayStatus === 'completed' && record.correctAnswers && record.pointsPerQuestion) {
               let correctCount = 0;
-              record.correctAnswers.forEach((ans, idx) => { if (record.userAnswers && record.userAnswers[idx] === ans) correctCount++; });
-              scoreDisplay = `${correctCount * parseFloat(record.pointsPerQuestion)} / ${record.correctAnswers.length * parseFloat(record.pointsPerQuestion)}`;
+              record.correctAnswers.forEach((ans, idx) => {
+                if (record.userAnswers && record.userAnswers[idx] === ans) {
+                  correctCount++;
+                }
+              });
+              const score = correctCount * parseFloat(record.pointsPerQuestion);
+              const totalScore = record.correctAnswers.length * parseFloat(record.pointsPerQuestion);
+              scoreDisplay = `${score} / ${totalScore} 分`;
             }
+
             return (
               <div key={record.id} className="p-4 border border-gray-200 rounded-xl bg-gray-50 shadow-sm flex flex-col space-y-3">
                 <div className="flex justify-between items-start space-x-2">
@@ -534,22 +768,25 @@ export default function App() {
                     <p className="text-xs text-gray-500">{new Date(record.updatedAt).toLocaleString()}</p>
                     <div className="flex items-center gap-3 mt-1 flex-wrap">
                       {scoreDisplay && <span className="text-sm font-bold text-blue-600">得分: {scoreDisplay}</span>}
-                      <span className="text-gray-500 text-xs font-medium whitespace-nowrap">⏱ 耗時: {formatTime(record.elapsedTime || 0)}</span>
-                      {record.pdfUrl && <span className="text-green-600 text-xs font-bold bg-green-50 px-1.5 py-0.5 rounded whitespace-nowrap">附題目檔</span>}
+                      <span className="text-gray-500 text-xs font-medium">⏱ 耗時: {formatTime(record.elapsedTime || 0)}</span>
+                      {record.timerMode === 'down' && <span className="text-red-500 text-xs font-bold bg-red-50 px-1.5 py-0.5 rounded">倒計時 {record.timeLimitMinutes}分</span>}
+                      {record.pdfUrl && <span className="text-green-600 text-xs font-bold bg-green-50 px-1.5 py-0.5 rounded">附題目檔</span>}
                     </div>
                   </div>
-                  <span className={`text-xs font-bold px-2 py-1 rounded whitespace-nowrap shrink-0 ${statusColor}`}>{statusText}</span>
+                  <span className={`text-xs font-bold px-2 py-1 rounded whitespace-nowrap shrink-0 ${statusColor}`}>
+                    {statusText}
+                  </span>
                 </div>
                 <div className="flex justify-end space-x-2 border-t border-gray-200 pt-3">
                   {displayStatus === 'completed' ? (
-                    <button onClick={() => handleViewResult(record)} className="text-sm bg-gray-800 hover:bg-black text-white font-bold px-4 py-2 rounded-lg transition whitespace-nowrap">查看結果</button>
+                    <button onClick={() => handleViewResult(record)} className="text-sm bg-gray-800 hover:bg-black text-white font-bold px-4 py-2 rounded-lg transition">查看結果</button>
                   ) : (
                     <>
-                      <button onClick={() => handleEditRecordSetup(record)} className="text-sm bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-3 py-2 rounded-lg transition whitespace-nowrap">修改設定</button>
-                      <button onClick={() => handleResumeRecord(record)} className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg transition whitespace-nowrap">繼續作答</button>
+                      <button onClick={() => handleEditRecordSetup(record)} className="text-sm bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-3 py-2 rounded-lg transition">修改設定</button>
+                      <button onClick={() => handleResumeRecord(record)} className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg transition">繼續作答</button>
                     </>
                   )}
-                  <button onClick={() => setDeleteModalId(record.id)} className="text-sm bg-red-100 hover:bg-red-200 text-red-700 font-bold px-4 py-2 rounded-lg transition whitespace-nowrap">刪除</button>
+                  <button onClick={() => setDeleteModalId(record.id)} className="text-sm bg-red-100 hover:bg-red-200 text-red-700 font-bold px-4 py-2 rounded-lg transition">刪除</button>
                 </div>
               </div>
             );
@@ -562,69 +799,108 @@ export default function App() {
   const renderQuizPage = () => {
     const options = ALPHABET.slice(0, optionCount);
     const isLastQuestion = currentQuestionIndex === correctAnswers.length - 1;
-    // 重構平板與電腦作答頁的清晰三列標頭設計
+
     return (
       <>
-        {/* --- 電腦與平板 (Tablet/Desktop) UI --- */}
+        {/* --- 電腦版 / 平板版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
-          <div className="p-3 border-b bg-gray-50 flex flex-col space-y-2 shrink-0">
-            {/* Row 1: 考試名稱 & 回首頁按鈕 */}
-            <div className="flex justify-between items-start w-full">
-               <span className="text-sm font-bold text-blue-600 leading-tight truncate pr-2">{recordName}</span>
-               <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0" title="回首頁">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-               </button>
-            </div>
-            {/* Row 2: 剩餘時間 & 暫停按鈕 */}
+          <div className="p-4 border-b bg-gray-50 flex flex-col space-y-3 shrink-0">
+            {/* 1. 考試名稱 & 回首頁 */}
             <div className="flex justify-between items-center w-full">
-               <span className={`text-xs font-mono font-bold px-2 py-1 rounded whitespace-nowrap ${timerMode === 'down' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                 {timerMode === 'down' ? '⏳ 剩餘 ' : '⏱ 已過 '} {formatTime(displaySeconds)}
-               </span>
-               <button onClick={() => setIsPaused(true)} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow-sm transition whitespace-nowrap shrink-0">⏸ 暫停作答</button>
+              <span className="text-sm font-bold text-blue-600 truncate mr-2">{recordName}</span>
+              <button 
+                onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
+                className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
+                title="回首頁"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+              </button>
             </div>
-            {/* Row 3: 題號 / 總題數 */}
+
+            {/* 2. 剩餘時間 & 暫停按鈕 */}
+            <div className="flex justify-between items-center w-full">
+              <span className={`text-xs font-mono font-bold px-2 py-1.5 rounded whitespace-nowrap ${timerMode === 'down' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                {timerMode === 'down' ? '⏳ 剩餘 ' : '⏱ 已過 '} {formatTime(displaySeconds)}
+              </span>
+              <button 
+                onClick={() => setIsPaused(true)}
+                className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow-sm transition whitespace-nowrap shrink-0"
+              >
+                ⏸ 暫停作答
+              </button>
+            </div>
+
+            {/* 3. 目前題號/總題數 */}
             <div className="flex items-center w-full whitespace-nowrap">
-               <span className="font-medium text-gray-700 text-sm">第</span>
-               <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 mx-1 border border-gray-300 rounded outline-none font-bold text-blue-600 text-sm">
-                 {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
-               </select>
-               <span className="font-medium text-gray-700 text-sm">題 / {correctAnswers.length} 題</span>
+              <span className="font-medium text-gray-700 text-sm">第</span>
+              <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="mx-2 p-1 border border-gray-300 rounded outline-none font-bold text-blue-600 text-sm bg-white">
+                {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
+              </select>
+              <span className="font-medium text-gray-700 text-sm">題 / {correctAnswers.length} 題</span>
             </div>
           </div>
 
           <div className="p-4 flex justify-center space-x-4 border-b shrink-0">
             {MARK_OPTIONS.map(mark => (
-              <button key={mark.id} onClick={() => handleToggleMark(mark.id)} className={`text-2xl w-12 h-12 flex items-center justify-center rounded-full transition-all font-bold ${marks[currentQuestionIndex] === mark.id ? 'bg-blue-100 scale-110 shadow-md opacity-100 ' + mark.colorClass : 'bg-gray-50 hover:bg-gray-100 opacity-40 hover:opacity-100 ' + mark.colorClass}`}>{mark.symbol}</button>
+              <button 
+                key={mark.id} 
+                onClick={() => handleToggleMark(mark.id)} 
+                className={`text-2xl w-12 h-12 flex items-center justify-center rounded-full transition-all font-bold ${marks[currentQuestionIndex] === mark.id ? 'bg-blue-100 scale-110 shadow-md opacity-100 ' + mark.colorClass : 'bg-gray-50 hover:bg-gray-100 opacity-40 hover:opacity-100 ' + mark.colorClass}`}
+              >
+                {mark.symbol}
+              </button>
             ))}
           </div>
+
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-gray-50/50">
             {options.map(opt => (
               <button key={opt} onClick={() => handleSelectAnswer(opt)} className={`w-full p-4 rounded-xl border-2 text-xl font-bold transition ${userAnswers[currentQuestionIndex] === opt ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-gray-50'}`}>{opt}</button>
             ))}
           </div>
+
           <div className="p-4 border-t bg-white flex justify-between items-center shrink-0">
-            <button onClick={() => setShowMarksModal(true)} className="text-gray-600 font-medium hover:text-gray-800 px-3 py-2 rounded whitespace-nowrap">看標註題目</button>
-            <button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow transition whitespace-nowrap">{isLastQuestion ? '作答完成' : '下一題'}</button>
+            <button onClick={() => setShowMarksModal(true)} className="text-gray-600 font-medium hover:text-gray-800 px-3 py-2 rounded">看標註題目</button>
+            <button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow transition">{isLastQuestion ? '作答完成' : '下一題'}</button>
           </div>
         </div>
 
-        {/* --- 手機版 (Mobile Portrait) UI --- */}
+        {/* --- 手機版 UI --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA] h-full">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="font-bold text-black text-sm flex items-center">
               <span>第</span>
-              <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="mx-1 p-0 bg-transparent outline-none text-black font-bold appearance-none underline decoration-gray-400 text-center">
+              <select 
+                value={currentQuestionIndex} 
+                onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} 
+                className="mx-1 p-0 bg-transparent outline-none text-black font-bold appearance-none underline decoration-gray-400 text-center"
+              >
                 {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
               </select>
               <span>題 / {correctAnswers.length}題</span>
             </div>
+            
             <div className="flex items-center gap-2 shrink-0">
               <div className={`text-xs font-mono font-bold px-2 py-1 rounded ${timerMode === 'down' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
                 {timerMode === 'down' ? '⏳' : '⏱'} {formatTime(displaySeconds)}
               </div>
-              <button onClick={() => setIsPaused(true)} className="bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold py-1 px-2 rounded transition">⏸ 暫停</button>
-              <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+              <button 
+                onClick={() => setIsPaused(true)}
+                className="bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold py-1 px-2 rounded transition"
+              >
+                ⏸ 暫停
+              </button>
+              <button 
+                onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
+                className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm"
+                title="回首頁"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
               </button>
             </div>
           </div>
@@ -632,7 +908,19 @@ export default function App() {
           <div className="w-full h-full flex flex-row items-center px-2 py-2 gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             <div className="flex flex-col gap-2 shrink-0">
               <div className="relative">
-                <select value={marks[currentQuestionIndex] || ''} onChange={(e) => { const val = e.target.value; setMarks(prev => { const newMarks = { ...prev }; if (!val) delete newMarks[currentQuestionIndex]; else newMarks[currentQuestionIndex] = val; return newMarks; }); }} className="appearance-none bg-[#E5E7EB] border-none text-gray-700 py-1.5 pl-2 pr-6 rounded-md text-xs font-bold outline-none w-[80px]">
+                <select
+                  value={marks[currentQuestionIndex] || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMarks(prev => {
+                      const newMarks = { ...prev };
+                      if (!val) delete newMarks[currentQuestionIndex];
+                      else newMarks[currentQuestionIndex] = val;
+                      return newMarks;
+                    });
+                  }}
+                  className="appearance-none bg-[#E5E7EB] border-none text-gray-700 py-1.5 pl-2 pr-6 rounded-md text-xs font-bold outline-none w-[80px]"
+                >
                   <option value="">標註選單</option>
                   {MARK_OPTIONS.map(m => <option key={m.id} value={m.id}>{m.symbol}</option>)}
                 </select>
@@ -640,17 +928,31 @@ export default function App() {
                   <svg className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
                 </div>
               </div>
-              <button onClick={() => setShowMarksModal(true)} className="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-1.5 px-2 rounded-md shadow-sm transition">看標註</button>
+              <button onClick={() => setShowMarksModal(true)} className="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-1.5 px-2 rounded-md shadow-sm transition">
+                看標註
+              </button>
             </div>
 
             <div className="flex-1 flex flex-row items-center justify-center gap-2 px-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
               {options.map(opt => (
-                <button key={opt} onClick={() => handleSelectAnswer(opt)} className={`w-[45px] h-[55px] md:h-full rounded-lg text-2xl font-bold flex items-center justify-center transition-colors shrink-0 shadow-sm ${userAnswers[currentQuestionIndex] === opt ? 'bg-[#3B82F6] text-white border-none' : 'bg-[#E5E7EB] text-black border-none hover:bg-gray-300'}`}>{opt}</button>
+                <button 
+                  key={opt} 
+                  onClick={() => handleSelectAnswer(opt)} 
+                  className={`w-[45px] h-[55px] md:h-full rounded-lg text-2xl font-bold flex items-center justify-center transition-colors shrink-0 shadow-sm ${
+                    userAnswers[currentQuestionIndex] === opt 
+                    ? 'bg-[#3B82F6] text-white border-none' 
+                    : 'bg-[#E5E7EB] text-black border-none hover:bg-gray-300'
+                  }`}
+                >
+                  {opt}
+                </button>
               ))}
             </div>
 
             <div className="shrink-0 flex items-center">
-              <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-sm transition whitespace-nowrap text-sm">{isLastQuestion ? '交卷' : '下一題'}</button>
+              <button onClick={handleNext} className="bg-[#3B82F6] hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-sm transition whitespace-nowrap text-sm">
+                {isLastQuestion ? '交卷' : '下一題'}
+              </button>
             </div>
           </div>
         </div>
@@ -661,12 +963,13 @@ export default function App() {
   const renderReviewPage = () => {
     return (
       <>
-        {/* 電腦/平板 */}
+        {/* --- 電腦版 / 平板版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 text-center shrink-0">
             <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
             <p className="text-sm text-gray-500 mt-1 truncate">{recordName}</p>
           </div>
+
           <div className="flex-1 overflow-y-auto p-4">
             <table className="w-full text-center border-collapse">
               <thead>
@@ -678,7 +981,8 @@ export default function App() {
               </thead>
               <tbody>
                 {correctAnswers.map((_, idx) => {
-                  const ans = userAnswers[idx]; const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
+                  const ans = userAnswers[idx];
+                  const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
                   return (
                     <tr key={idx} className={`border-b border-gray-100 ${!ans ? 'bg-red-50' : ''}`}>
                       <td className="py-3 font-medium text-gray-700">{idx + 1}</td>
@@ -690,32 +994,38 @@ export default function App() {
               </tbody>
             </table>
           </div>
+
           <div className="p-4 border-t bg-white flex justify-between space-x-3 shrink-0">
             <button onClick={() => setCurrentPage('quiz')} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 rounded-lg transition">修改答案</button>
             <button onClick={handleSubmit} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow transition">交卷</button>
           </div>
         </div>
 
-        {/* 手機版 */}
+        {/* --- 手機版 UI --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA] h-full">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
               <span className="text-xs text-gray-400">作答檢查</span>
               <span className="font-bold text-gray-800 text-sm truncate w-full">{recordName}</span>
             </div>
+            
             <div className="flex items-center gap-1.5 shrink-0">
-              <div className={`text-xs font-mono font-bold px-1.5 py-1 rounded ${timerMode === 'down' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>{formatTime(displaySeconds)}</div>
+              <div className={`text-xs font-mono font-bold px-1.5 py-1 rounded ${timerMode === 'down' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                {formatTime(displaySeconds)}
+              </div>
               <button onClick={() => setIsPaused(true)} className="bg-amber-500 text-white text-[11px] font-bold px-1.5 py-1 rounded transition">⏸ 暫停</button>
               <button onClick={() => setCurrentPage('quiz')} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-2 py-1 rounded transition text-xs">修改</button>
               <button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700 text-white font-bold px-2 py-1 rounded shadow transition text-xs">交卷</button>
             </div>
           </div>
+
           <div className="w-full h-full flex flex-row items-center px-4 py-2 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {correctAnswers.map((_, idx) => {
-              const ans = userAnswers[idx]; const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
+              const ans = userAnswers[idx];
+              const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
               return (
                 <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-20 h-[90%] shrink-0 rounded-xl border shadow-sm cursor-pointer ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
-                  <span className="text-xs text-gray-500 mb-1 whitespace-nowrap">第 {idx + 1} 題</span>
+                  <span className="text-xs text-gray-500 mb-1">第 {idx + 1} 題</span>
                   <span className={`text-2xl font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '無'}</span>
                   <span className={`text-sm mt-1 font-bold ${markOpt?.colorClass || 'text-transparent'}`}>{markOpt ? markOpt.symbol : ' '}</span>
                 </div>
@@ -733,14 +1043,14 @@ export default function App() {
 
     return (
       <>
-        {/* --- 電腦版與平板直立上方結果頁 UI --- */}
+        {/* --- 電腦版 / 平板版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative shrink-0">
              <h2 className="text-lg font-medium opacity-90 truncate">{recordName}</h2>
-             <div className="flex items-baseline justify-center mt-1">
+             <div className="flex items-baseline justify-center mt-1 whitespace-nowrap">
               <span className="text-4xl font-bold">{score}</span>
-              <span className="text-lg ml-1 opacity-80 whitespace-nowrap">/ {totalScore}</span>
-              <span className="text-sm ml-3 opacity-80 bg-black/20 px-2 py-0.5 rounded-full whitespace-nowrap">⏱ 總耗時 {formatTime(elapsedTime)}</span>
+              <span className="text-lg ml-1 opacity-80">/ {totalScore}</span>
+              <span className="text-sm ml-3 opacity-80 bg-black/20 px-2 py-0.5 rounded-full">⏱ 總耗時 {formatTime(elapsedTime)}</span>
             </div>
           </div>
 
@@ -748,18 +1058,20 @@ export default function App() {
             {details.map(item => (
               <div key={item.questionNum} className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${item.isCorrect ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
                 <div className="flex items-center space-x-3">
-                  <span className="font-bold text-gray-500 w-8 whitespace-nowrap">#{item.questionNum}</span>
+                  <span className="font-bold text-gray-500 w-8">#{item.questionNum}</span>
                   <div className="w-6 text-center shrink-0">
-                    {item.markOpt && <span className={`text-xl font-bold ${item.markOpt.colorClass}`}>{item.markOpt.symbol}</span>}
+                    {item.markOpt && (
+                      <span className={`text-xl font-bold ${item.markOpt.colorClass}`}>{item.markOpt.symbol}</span>
+                    )}
                   </div>
                   <div className="pl-2">
-                    <div className="text-xs text-gray-500 mb-1 whitespace-nowrap">您的答案</div>
+                    <div className="text-xs text-gray-500 mb-1">您的答案</div>
                     <div className={`font-bold text-lg whitespace-nowrap ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</div>
                   </div>
                 </div>
                 {!item.isCorrect && (
                   <div className="text-right pl-4 border-l border-red-200">
-                    <div className="text-xs text-gray-500 mb-1 whitespace-nowrap">正確答案</div>
+                    <div className="text-xs text-gray-500 mb-1">正確答案</div>
                     <div className={`font-bold ${item.correctAns.length > 2 ? 'text-sm' : 'text-lg'} text-green-600 whitespace-nowrap`}>{item.correctAns}</div>
                   </div>
                 )}
@@ -769,44 +1081,68 @@ export default function App() {
           </div>
 
           <div className="p-4 border-t bg-white flex space-x-3 shrink-0">
-            <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-3 rounded-lg transition whitespace-nowrap">回列表</button>
-            <button onClick={() => { setCurrentPage('setup'); setSetupTab('new'); setRawAnswers(''); setTotalQuestions(''); setRecordName(''); setPdfUrl(null); setCurrentRecordId(null); }} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition whitespace-nowrap">新測驗</button>
+            <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="flex-1 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-3 rounded-lg transition">回列表</button>
+            <button 
+              onClick={() => {
+                setCurrentPage('setup');
+                setSetupTab('new');
+                setRawAnswers('');
+                setTotalQuestions('');
+                setRecordName('');
+                setPdfUrl(null);
+                setCurrentRecordId(null);
+              }}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition"
+            >
+              新測驗
+            </button>
           </div>
         </div>
 
-        {/* --- 手機橫/直立版極致單行壓縮結果頁 UI --- */}
+        {/* --- 手機版 UI --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA] h-full">
-          <div className="px-2 py-2 flex items-center justify-between shrink-0 border-b border-gray-200 bg-white w-full overflow-hidden gap-1">
-            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              <span className="text-[11px] font-bold text-gray-800 truncate max-w-[80px] shrink-0">{recordName}</span>
-              <span className="text-sm font-bold text-blue-600 shrink-0">{score}/{totalScore}</span>
-              <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1 rounded whitespace-nowrap shrink-0">⏱ {formatTime(elapsedTime)}</span>
-            </div>
-            <div className="flex gap-1.5 shrink-0">
-              <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="border border-blue-600 text-blue-600 font-bold px-2 py-1 rounded transition text-[10px] bg-white whitespace-nowrap">列表</button>
-              <button onClick={() => { setCurrentPage('setup'); setSetupTab('new'); setRawAnswers(''); setTotalQuestions(''); setRecordName(''); setPdfUrl(null); setCurrentRecordId(null); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2 py-1 rounded shadow transition text-[10px] whitespace-nowrap">新測驗</button>
-            </div>
+          <div className="px-3 py-2 flex flex-row items-center justify-between shrink-0 border-b border-gray-200 bg-white gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+             <div className="flex flex-row items-center gap-2 shrink-0">
+               <span className="text-xs font-bold text-gray-700 truncate max-w-[80px]">{recordName}</span>
+               <div className="flex items-baseline whitespace-nowrap">
+                <span className="text-sm font-bold text-blue-600">{score}</span>
+                <span className="text-[10px] text-gray-500">/{totalScore}</span>
+              </div>
+              <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded whitespace-nowrap">⏱ {formatTime(elapsedTime)}</span>
+             </div>
+             <div className="flex gap-1.5 shrink-0">
+              <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="border border-blue-600 text-blue-600 font-bold px-2 py-1 rounded transition text-xs bg-white whitespace-nowrap">列表</button>
+              <button onClick={() => {
+                setCurrentPage('setup');
+                setSetupTab('new');
+                setRawAnswers('');
+                setTotalQuestions('');
+                setRecordName('');
+                setPdfUrl(null);
+                setCurrentRecordId(null);
+              }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2 py-1 rounded shadow transition text-xs whitespace-nowrap">新測驗</button>
+             </div>
           </div>
 
-          <div className="w-full h-full flex flex-row items-center px-4 py-2 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+          <div className="w-full h-full flex flex-row items-center px-4 py-3 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {details.map(item => (
-              <div key={item.questionNum} className="relative overflow-hidden flex flex-col items-center justify-center w-[100px] h-[90%] shrink-0 rounded-xl border shadow-sm bg-white border-gray-200">
-                <div className="flex w-full px-2 justify-between items-center mb-1 z-10">
-                  <span className="text-xs font-bold text-gray-500 whitespace-nowrap">#{item.questionNum}</span>
+              <div key={item.questionNum} className="relative flex flex-col items-center justify-between w-[110px] py-2 shrink-0 rounded-xl border shadow-sm bg-white border-gray-200 h-auto min-h-[80px]">
+                <div className="flex w-full px-2 justify-between items-center border-b border-gray-100 pb-1 mb-1">
+                  <span className="text-xs font-bold text-gray-500">#{item.questionNum}</span>
                   <span className={`text-xs font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
                 </div>
                 
-                <div className="flex items-center justify-center gap-2 mt-1 z-10">
+                <div className="flex flex-row items-center justify-center gap-3 w-full px-1">
                   <div className="flex flex-col items-center">
-                    <span className="text-[10px] text-gray-400 whitespace-nowrap">你答</span>
-                    <span className={`text-xl font-bold whitespace-nowrap ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</span>
+                    <span className="text-[10px] text-gray-400 mb-0.5">你答</span>
+                    <span className={`text-lg leading-none font-bold ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</span>
                   </div>
                   {!item.isCorrect && (
                     <>
-                      <span className="text-gray-300 text-xs">|</span>
+                      <div className="w-[1px] h-6 bg-gray-200"></div>
                       <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-gray-400 whitespace-nowrap">正確</span>
-                        <span className={`${item.correctAns.length > 2 ? 'text-xs' : 'text-xl'} font-bold text-green-600 whitespace-nowrap`}>{item.correctAns}</span>
+                        <span className="text-[10px] text-gray-400 mb-0.5">正確</span>
+                        <span className={`${item.correctAns.length > 2 ? 'text-[10px]' : 'text-lg'} leading-none font-bold text-green-600 whitespace-nowrap`}>{item.correctAns}</span>
                       </div>
                     </>
                   )}
@@ -817,33 +1153,6 @@ export default function App() {
         </div>
       </>
     );
-  };
-
-  const renderPdfContent = () => {
-    if (isDesktop) {
-      return safePdfUrl ? <iframe src={`${safePdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" /> : null;
-    } else {
-      if (!safePdfUrl) return null;
-      return (
-        <div className="w-full h-full flex flex-col relative z-0 bg-gray-800">
-          <div className="w-full bg-gray-900 p-2 flex justify-between items-center text-white shrink-0 z-10 shadow-md">
-            <div className="flex space-x-2 items-center">
-              <button onClick={()=>setPdfPageNum(p=>p-1)} disabled={pdfPageNum<=1} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50 text-xs font-bold transition">◀ 上一頁</button>
-              <span className="text-xs font-medium px-2 whitespace-nowrap">第 {pdfPageNum} / {pdfTotalPages} 頁</span>
-              <button onClick={()=>setPdfPageNum(p=>p+1)} disabled={pdfPageNum>=pdfTotalPages} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50 text-xs font-bold transition">下一頁 ▶</button>
-            </div>
-            <div className="flex space-x-2 items-center">
-              <button onClick={()=>setPdfScale(s=>Math.max(0.5, s-0.2))} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs font-bold transition">🔍-</button>
-              <button onClick={()=>setPdfScale(s=>Math.min(3.0, s+0.2))} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs font-bold transition">🔍+</button>
-            </div>
-          </div>
-          <div className="flex-1 overflow-auto p-4 flex justify-center items-start" style={{ WebkitOverflowScrolling: 'touch' }}>
-            {!pdfDoc && <div className="text-white mt-10 font-bold animate-pulse">正在載入試題防崩潰畫布...</div>}
-            <canvas ref={canvasRef} className="shadow-2xl bg-white max-w-none" />
-          </div>
-        </div>
-      );
-    }
   };
 
   return (
@@ -876,22 +1185,42 @@ export default function App() {
       
       {currentPage === 'setup' && renderSetupPage()}
 
+      {/* --- 核心邏輯：暫停作答時遮蔽所有題目與作答區 --- */}
       {currentPage !== 'setup' && isPaused && (
         <div className="fixed inset-0 bg-gray-900/95 flex flex-col items-center justify-center z-50 p-6 text-center backdrop-blur-md animate-scale-in">
           <div className="text-6xl mb-4">🔒</div>
           <h2 className="text-2xl font-bold text-white mb-2">作答暫停中</h2>
           <p className="text-gray-400 text-sm max-w-xs mb-8">目前的作答時間已凍結，題目與作答區域已安全遮蔽。</p>
           <div className="flex flex-col w-full max-w-xs gap-3">
-            <button onClick={() => setIsPaused(false)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg transition text-base">▶ 繼續作答</button>
-            <button onClick={() => { setIsPaused(false); setCurrentPage('setup'); setSetupTab('history'); }} className="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-3 rounded-xl transition text-sm">🏠 返回歷史紀錄列表</button>
+            <button 
+              onClick={() => setIsPaused(false)} 
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg transition text-base"
+            >
+              ▶ 繼續作答
+            </button>
+            <button 
+              onClick={() => { setIsPaused(false); setCurrentPage('setup'); setSetupTab('history'); }} 
+              className="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-3 rounded-xl transition text-sm"
+            >
+              🏠 返回歷史紀錄列表
+            </button>
           </div>
         </div>
       )}
 
       {currentPage !== 'setup' && !isPaused && (
         <>
+          {/* 左側 / 上方：PDF 題目瀏覽區 */}
           <div className="pdf-container bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
-            {safePdfUrl ? renderPdfContent() : (
+            {pdfUrl ? (
+              isDesktop ? (
+                // 電腦版原生強制最寬 Iframe
+                <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
+              ) : (
+                // 平板與手機版防卡死 Canvas 解析引擎
+                <PdfViewer pdfUrl={pdfUrl} />
+              )
+            ) : (
               <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
                 <span className="text-4xl mb-4">📄</span>
                 <p className="mb-2 font-bold text-lg text-white">尚未載入題目 PDF</p>
@@ -904,7 +1233,11 @@ export default function App() {
             )}
           </div>
 
-          <div className="quiz-container bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] lg:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          {/* 右側 / 下方：App 作答操作區 */}
+          <div 
+            className="quiz-container bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] lg:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+          >
             {currentPage === 'quiz' && renderQuizPage()}
             {currentPage === 'review' && renderReviewPage()}
             {currentPage === 'result' && renderResultPage()}
