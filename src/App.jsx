@@ -15,7 +15,6 @@ const PdfViewer = ({ pdfUrl }) => {
 
     const loadPdf = async () => {
       try {
-        // 動態載入 PDF.js 核心庫 (避開需要 npm install)
         if (!window.pdfjsLib) {
           await new Promise((resolve, reject) => {
             const script = document.createElement('script');
@@ -29,7 +28,6 @@ const PdfViewer = ({ pdfUrl }) => {
         }
         if (!isMounted) return;
 
-        // 解析 Base64
         const base64Marker = ';base64,';
         const base64Index = pdfUrl.indexOf(base64Marker);
         if (base64Index === -1) throw new Error("無效的 PDF 格式");
@@ -41,7 +39,6 @@ const PdfViewer = ({ pdfUrl }) => {
           uint8Array[i] = raw.charCodeAt(i);
         }
 
-        // 使用 PDF.js 載入文件
         const loadingTask = window.pdfjsLib.getDocument({ data: uint8Array });
         const pdf = await loadingTask.promise;
         if (!isMounted) return;
@@ -49,11 +46,9 @@ const PdfViewer = ({ pdfUrl }) => {
         const container = containerRef.current;
         if (container) container.innerHTML = ''; 
 
-        // 一頁一頁渲染成 Canvas，徹底解決 iOS iframe 鎖死第一頁的 Bug
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
           if (!isMounted) break;
           const page = await pdf.getPage(pageNum);
-          // 使用 2.0 高解析度渲染，透過 CSS 縮小，確保 Retina 螢幕字體清晰
           const viewport = page.getViewport({ scale: 2.0 }); 
           
           const wrapper = document.createElement('div');
@@ -91,7 +86,8 @@ const PdfViewer = ({ pdfUrl }) => {
            <p className="font-bold">正在為您高畫質解析考卷...</p>
         </div>
       )}
-      <div ref={containerRef} className="flex flex-col items-center w-full max-w-4xl mx-auto"></div>
+      {/* 移除了 max-w-4xl 確保左右完全填滿 */}
+      <div ref={containerRef} className="flex flex-col items-center w-full mx-auto"></div>
     </div>
   );
 };
@@ -137,7 +133,6 @@ const MARK_OPTIONS = [
 ];
 const ALPHABET = ['A', 'B', 'C', 'D', 'E'];
 
-// --- 時間格式化工具 ---
 const formatTime = (totalSeconds) => {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
@@ -157,6 +152,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [pdfUrl, setPdfUrl] = useState(null);
+  const [isDesktop, setIsDesktop] = useState(false); // 新增：電腦版偵測狀態
 
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -172,7 +168,6 @@ export default function App() {
   const [marks, setMarks] = useState({});
   const [specialRules, setSpecialRules] = useState({});
 
-  // --- 計時與暫停相關狀態 ---
   const [timerMode, setTimerMode] = useState('up'); 
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(''); 
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -184,6 +179,10 @@ export default function App() {
   const [showMarksModal, setShowMarksModal] = useState(false);
 
   useEffect(() => {
+    // 偵測是否為電腦裝置 (排除 iOS, Android 及觸控 Mac)
+    const checkDesktop = !(/iPad|iPhone|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+    setIsDesktop(checkDesktop);
+
     if (!auth) {
       setAuthError("尚未填寫 Firebase 金鑰 (apiKey等)，請檢查 VS Code 裡的程式碼是否已填妥！");
       return;
@@ -221,7 +220,6 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // --- 計時器核心邏輯 ---
   useEffect(() => {
     let timer;
     if ((currentPage === 'quiz' || currentPage === 'review') && !isPaused) {
@@ -338,7 +336,7 @@ export default function App() {
       notesText = rawAnswers.substring(firstNoteIndex);
     }
     
-    answersText = answersText.replace(/答案標註#者/g, '');
+    answersText = answersText.replace(/答案標註#者.*?備註。/g, '');
     answersText = answersText.replace(/[A-Z][卷組]/gi, ''); 
     
     const noteRegex = /第\s*(\d+)\s*題(.*?)(?=第\s*\d+\s*題|$)/gs;
@@ -804,7 +802,7 @@ export default function App() {
 
     return (
       <>
-        {/* --- 電腦版 UI --- */}
+        {/* --- 電腦版 / 平板版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
@@ -867,7 +865,7 @@ export default function App() {
         </div>
 
         {/* --- 手機版 UI --- */}
-        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
+        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA] h-full">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="font-bold text-black text-sm flex items-center">
               <span>第</span>
@@ -904,7 +902,7 @@ export default function App() {
             </div>
           </div>
           
-          <div className="w-full flex flex-row items-center px-2 py-3 gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+          <div className="w-full h-full flex flex-row items-center px-2 py-2 gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             <div className="flex flex-col gap-2 shrink-0">
               <div className="relative">
                 <select
@@ -937,7 +935,7 @@ export default function App() {
                 <button 
                   key={opt} 
                   onClick={() => handleSelectAnswer(opt)} 
-                  className={`w-[45px] h-[55px] rounded-lg text-2xl font-bold flex items-center justify-center transition-colors shrink-0 shadow-sm ${
+                  className={`w-[45px] h-[55px] md:h-full rounded-lg text-2xl font-bold flex items-center justify-center transition-colors shrink-0 shadow-sm ${
                     userAnswers[currentQuestionIndex] === opt 
                     ? 'bg-[#3B82F6] text-white border-none' 
                     : 'bg-[#E5E7EB] text-black border-none hover:bg-gray-300'
@@ -962,7 +960,7 @@ export default function App() {
   const renderReviewPage = () => {
     return (
       <>
-        {/* --- 電腦版 UI --- */}
+        {/* --- 電腦版 / 平板版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gray-50 text-center shrink-0">
             <h2 className="text-xl font-bold text-gray-800">作答檢查</h2>
@@ -1001,7 +999,7 @@ export default function App() {
         </div>
 
         {/* --- 手機版 UI --- */}
-        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
+        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA] h-full">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
             <div className="flex flex-col flex-1 min-w-0 pr-2">
               <span className="text-xs text-gray-400">作答檢查</span>
@@ -1018,12 +1016,12 @@ export default function App() {
             </div>
           </div>
 
-          <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+          <div className="w-full h-full flex flex-row items-center px-4 py-2 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {correctAnswers.map((_, idx) => {
               const ans = userAnswers[idx];
               const markOpt = marks[idx] ? MARK_OPTIONS.find(m => m.id === marks[idx]) : null;
               return (
-                <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-20 h-24 shrink-0 rounded-xl border shadow-sm cursor-pointer ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
+                <div key={idx} onClick={() => {setCurrentQuestionIndex(idx); setCurrentPage('quiz');}} className={`flex flex-col items-center justify-center w-20 h-[90%] shrink-0 rounded-xl border shadow-sm cursor-pointer ${!ans ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:border-blue-300'}`}>
                   <span className="text-xs text-gray-500 mb-1">第 {idx + 1} 題</span>
                   <span className={`text-2xl font-bold ${!ans ? 'text-red-500' : 'text-blue-600'}`}>{ans || '無'}</span>
                   <span className={`text-sm mt-1 font-bold ${markOpt?.colorClass || 'text-transparent'}`}>{markOpt ? markOpt.symbol : ' '}</span>
@@ -1042,7 +1040,7 @@ export default function App() {
 
     return (
       <>
-        {/* --- 電腦版 UI --- */}
+        {/* --- 電腦版 / 平板版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
           <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-center text-white relative shrink-0">
              <h2 className="text-lg font-medium opacity-90 truncate">{recordName}</h2>
@@ -1099,7 +1097,7 @@ export default function App() {
         </div>
 
         {/* --- 手機版 UI --- */}
-        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA]">
+        <div className="flex md:hidden w-full flex-col bg-[#F8F9FA] h-full">
           <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
              <div className="flex flex-col flex-1 min-w-0 pr-2">
                <span className="text-xs text-gray-500 truncate">{recordName}</span>
@@ -1123,9 +1121,9 @@ export default function App() {
              </div>
           </div>
 
-          <div className="w-full flex flex-row items-center px-4 py-4 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
+          <div className="w-full h-full flex flex-row items-center px-4 py-2 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
             {details.map(item => (
-              <div key={item.questionNum} className="relative overflow-hidden flex flex-col items-center justify-center w-[100px] h-28 shrink-0 rounded-xl border shadow-sm bg-white border-gray-200">
+              <div key={item.questionNum} className="relative overflow-hidden flex flex-col items-center justify-center w-[100px] h-[90%] shrink-0 rounded-xl border shadow-sm bg-white border-gray-200">
                 <div className="flex w-full px-2 justify-between items-center mb-1 z-10">
                   <span className="text-xs font-bold text-gray-500">#{item.questionNum}</span>
                   <span className={`text-xs font-bold ${item.markOpt?.colorClass || 'text-transparent'}`}>{item.markOpt ? item.markOpt.symbol : ' '}</span>
@@ -1155,10 +1153,31 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-[100dvh] bg-gray-100 font-sans text-gray-900 relative ${currentPage === 'setup' ? 'flex items-center justify-center p-4' : 'flex flex-col md:flex-row w-screen h-[100dvh] overflow-hidden'}`}>
+    <div className={`min-h-[100dvh] bg-gray-100 font-sans text-gray-900 relative ${currentPage === 'setup' ? 'flex items-center justify-center p-4' : 'flex flex-col app-container w-screen h-[100dvh] overflow-hidden'}${isDesktop && currentPage !== 'setup' ? ' desktop-mode' : ''}`}>
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .animate-scale-in { animation: scaleIn 0.2s ease-out forwards; }
+        
+        /* --- 響應式排版核心 --- */
+        .pdf-container { flex: 1 1 0%; width: 100%; }
+        .quiz-container { flex-shrink: 0; height: auto; max-height: 50dvh; width: 100%; }
+        
+        /* 手機版橫式 (7:3 分割) */
+        @media (max-width: 767px) and (orientation: landscape) {
+          .pdf-container { flex: none; height: 70dvh; }
+          .quiz-container { flex: none; height: 30dvh; max-height: 30dvh; }
+        }
+        
+        /* 平板 iPad 版 (18:5 分割) */
+        @media (min-width: 768px) {
+          .app-container { flex-direction: row !important; }
+          .pdf-container { flex: 18 1 0% !important; height: 100dvh; }
+          .quiz-container { flex: 5 1 0% !important; height: 100dvh; max-height: none; width: auto !important; min-width: 0 !important; }
+        }
+        
+        /* 電腦版 Override (維持 400px 固定寬度) */
+        .desktop-mode .pdf-container { flex: 1 1 0% !important; }
+        .desktop-mode .quiz-container { flex: none !important; width: 400px !important; min-width: 400px !important; }
       `}} />
       
       {currentPage === 'setup' && renderSetupPage()}
@@ -1188,12 +1207,18 @@ export default function App() {
 
       {currentPage !== 'setup' && !isPaused && (
         <>
-          {/* 左側 / 上方：使用全新的 PdfViewer 取代殘缺的 iframe */}
-          <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col relative z-0 overflow-hidden">
+          {/* 左側 / 上方：PDF 題目瀏覽區 */}
+          <div className="pdf-container bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
             {pdfUrl ? (
-              <PdfViewer pdfUrl={pdfUrl} />
+              isDesktop ? (
+                // 電腦版原生強制最寬 Iframe
+                <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
+              ) : (
+                // 平板與手機版防卡死 Canvas 解析引擎
+                <PdfViewer pdfUrl={pdfUrl} />
+              )
             ) : (
-              <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%] mx-auto my-auto">
+              <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
                 <span className="text-4xl mb-4">📄</span>
                 <p className="mb-2 font-bold text-lg text-white">尚未載入題目 PDF</p>
                 <p className="mb-6 text-sm text-gray-400">若有需要，可於此重新上傳以供對照</p>
@@ -1207,7 +1232,7 @@ export default function App() {
 
           {/* 右側 / 下方：App 作答操作區 */}
           <div 
-            className="shrink-0 h-auto max-h-[50dvh] w-full md:max-h-none md:h-full md:w-[400px] md:min-w-[400px] bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] md:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
+            className="quiz-container bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.1)] lg:shadow-[-5px_0_15px_rgba(0,0,0,0.05)] flex flex-col relative z-10"
             style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           >
             {currentPage === 'quiz' && renderQuizPage()}
