@@ -3,95 +3,6 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
-// --- 解決蘋果 Safari / iPadOS 無法捲動 PDF 的自訂渲染器 ---
-const PdfViewer = ({ pdfUrl }) => {
-  const containerRef = useRef(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!pdfUrl) return;
-    let isMounted = true;
-    setLoading(true);
-
-    const loadPdf = async () => {
-      try {
-        if (!window.pdfjsLib) {
-          await new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-          });
-          window.pdfjsLib = window['pdfjs-dist/build/pdf'];
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-        }
-        if (!isMounted) return;
-
-        const base64Marker = ';base64,';
-        const base64Index = pdfUrl.indexOf(base64Marker);
-        if (base64Index === -1) throw new Error("無效的 PDF 格式");
-        
-        const base64 = pdfUrl.substring(base64Index + base64Marker.length);
-        const raw = atob(base64);
-        const uint8Array = new Uint8Array(raw.length);
-        for (let i = 0; i < raw.length; i++) {
-          uint8Array[i] = raw.charCodeAt(i);
-        }
-
-        const loadingTask = window.pdfjsLib.getDocument({ data: uint8Array });
-        const pdf = await loadingTask.promise;
-        if (!isMounted) return;
-
-        const container = containerRef.current;
-        if (container) container.innerHTML = ''; 
-
-        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-          if (!isMounted) break;
-          const page = await pdf.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 2.0 }); 
-          
-          const wrapper = document.createElement('div');
-          wrapper.className = 'mb-4 shadow-lg w-full bg-white';
-          
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-          canvas.style.width = '100%';
-          canvas.style.height = 'auto';
-          canvas.style.display = 'block';
-          
-          wrapper.appendChild(canvas);
-          if (container) container.appendChild(wrapper);
-          
-          await page.render({ canvasContext: context, viewport: viewport }).promise;
-        }
-        if (isMounted) setLoading(false);
-      } catch (e) {
-        console.error("PDF 渲染失敗:", e);
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    loadPdf();
-    return () => { isMounted = false; };
-  }, [pdfUrl]);
-
-  return (
-    <div className="w-full h-full overflow-y-auto bg-gray-800 p-2 md:p-4 relative" style={{ WebkitOverflowScrolling: 'touch' }}>
-      {loading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-gray-800 z-10">
-           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
-           <p className="font-bold">正在為您高畫質解析考卷...</p>
-        </div>
-      )}
-      {/* 移除了 max-w-4xl 確保左右完全填滿 */}
-      <div ref={containerRef} className="flex flex-col items-center w-full mx-auto"></div>
-    </div>
-  );
-};
-
 // --- Firebase 初始化區塊 ---
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
@@ -152,7 +63,6 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [pdfUrl, setPdfUrl] = useState(null);
-  const [isDesktop, setIsDesktop] = useState(false); // 新增：電腦版偵測狀態
 
   const [currentPage, setCurrentPage] = useState('setup');
 
@@ -179,10 +89,6 @@ export default function App() {
   const [showMarksModal, setShowMarksModal] = useState(false);
 
   useEffect(() => {
-    // 偵測是否為電腦裝置 (排除 iOS, Android 及觸控 Mac)
-    const checkDesktop = !(/iPad|iPhone|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
-    setIsDesktop(checkDesktop);
-
     if (!auth) {
       setAuthError("尚未填寫 Firebase 金鑰 (apiKey等)，請檢查 VS Code 裡的程式碼是否已填妥！");
       return;
@@ -804,39 +710,45 @@ export default function App() {
       <>
         {/* --- 電腦版 / 平板版 UI --- */}
         <div className="hidden md:flex w-full h-full flex-col overflow-hidden bg-white">
-          <div className="p-4 border-b bg-gray-50 flex justify-between items-center space-x-2 shrink-0">
-            <div className="flex flex-col flex-1 min-w-0 pr-2">
-               <span className="text-sm font-bold text-blue-600 mb-1 leading-tight break-words flex items-center">
+          {/* 修正：針對平板右上角過擠的問題，改為上下三列清晰排版 */}
+          <div className="p-3 border-b bg-gray-50 flex flex-col space-y-2 shrink-0">
+            {/* Row 1: 考試名稱 & 首頁按鈕 */}
+            <div className="flex justify-between items-start w-full">
+               <span className="text-sm font-bold text-blue-600 leading-tight truncate pr-2">
                  {recordName}
-                 <span className={`ml-3 text-xs font-mono font-bold px-2 py-1 rounded ${timerMode === 'down' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                   {timerMode === 'down' ? '⏳ 剩餘 ' : '⏱ 已過 '} {formatTime(displaySeconds)}
-                 </span>
                </span>
-               <div className="flex items-center space-x-2 mt-1">
-                 <span className="font-medium text-gray-700">第</span>
-                 <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 border border-gray-300 rounded outline-none font-bold text-blue-600">
-                   {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
-                 </select>
-                 <span className="font-medium text-gray-700">題 / {correctAnswers.length} 題</span>
-               </div>
+               <button 
+                  onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
+                  className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all shrink-0"
+                  title="回首頁"
+               >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                  </svg>
+               </button>
             </div>
-            <div className="flex items-center space-x-2 shrink-0">
-              <button 
+
+            {/* Row 2: 時間 & 暫停按鈕 */}
+            <div className="flex justify-between items-center w-full">
+               <span className={`text-xs font-mono font-bold px-2 py-1 rounded whitespace-nowrap ${timerMode === 'down' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                 {timerMode === 'down' ? '⏳ 剩餘 ' : '⏱ 已過 '} {formatTime(displaySeconds)}
+               </span>
+               <button 
                 onClick={() => setIsPaused(true)}
-                className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm transition whitespace-nowrap"
-              >
+                className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow-sm transition whitespace-nowrap shrink-0"
+               >
                 ⏸ 暫停作答
-              </button>
-              <button 
-                onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} 
-                className="flex items-center justify-center w-10 h-10 bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 rounded-full shadow-sm transition-all"
-                title="回首頁"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                </svg>
-              </button>
+               </button>
+            </div>
+
+            {/* Row 3: 題號 / 總題數 */}
+            <div className="flex items-center w-full whitespace-nowrap">
+               <span className="font-medium text-gray-700 text-sm">第</span>
+               <select value={currentQuestionIndex} onChange={(e) => setCurrentQuestionIndex(Number(e.target.value))} className="p-1 mx-1 border border-gray-300 rounded outline-none font-bold text-blue-600 text-sm">
+                 {correctAnswers.map((_, idx) => <option key={idx} value={idx}>{idx + 1}</option>)}
+               </select>
+               <span className="font-medium text-gray-700 text-sm">題 / {correctAnswers.length} 題</span>
             </div>
           </div>
 
@@ -1046,8 +958,9 @@ export default function App() {
              <h2 className="text-lg font-medium opacity-90 truncate">{recordName}</h2>
              <div className="flex items-baseline justify-center mt-1">
               <span className="text-4xl font-bold">{score}</span>
-              <span className="text-lg ml-1 opacity-80">/ {totalScore} 分</span>
-              <span className="text-sm ml-3 opacity-80 bg-black/20 px-2 py-0.5 rounded-full">⏱ 總耗時 {formatTime(elapsedTime)}</span>
+              {/* 修正：移除「分」字，並加上 whitespace-nowrap */}
+              <span className="text-lg ml-1 opacity-80 whitespace-nowrap">/ {totalScore}</span>
+              <span className="text-sm ml-3 opacity-80 bg-black/20 px-2 py-0.5 rounded-full whitespace-nowrap">⏱ 總耗時 {formatTime(elapsedTime)}</span>
             </div>
           </div>
 
@@ -1062,13 +975,15 @@ export default function App() {
                     )}
                   </div>
                   <div className="pl-2">
-                    <div className="text-xs text-gray-500 mb-1">您的答案</div>
+                    {/* 修正：加上 whitespace-nowrap 強制不換行 */}
+                    <div className="text-xs text-gray-500 mb-1 whitespace-nowrap">您的答案</div>
                     <div className={`font-bold text-lg ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</div>
                   </div>
                 </div>
                 {!item.isCorrect && (
                   <div className="text-right pl-4 border-l border-red-200">
-                    <div className="text-xs text-gray-500 mb-1">正確答案</div>
+                    {/* 修正：加上 whitespace-nowrap 強制不換行 */}
+                    <div className="text-xs text-gray-500 mb-1 whitespace-nowrap">正確答案</div>
                     <div className={`font-bold ${item.correctAns.length > 2 ? 'text-sm' : 'text-lg'} text-green-600`}>{item.correctAns}</div>
                   </div>
                 )}
@@ -1098,17 +1013,15 @@ export default function App() {
 
         {/* --- 手機版 UI --- */}
         <div className="flex md:hidden w-full flex-col bg-[#F8F9FA] h-full">
-          <div className="px-4 py-2 flex justify-between items-center shrink-0 border-b border-gray-200 bg-white">
-             <div className="flex flex-col flex-1 min-w-0 pr-2">
-               <span className="text-xs text-gray-500 truncate">{recordName}</span>
-               <div className="flex items-baseline mt-0.5">
-                <span className="text-lg font-bold text-blue-600">{score}</span>
-                <span className="text-xs ml-1 text-gray-500">/ {totalScore} 分</span>
-                <span className="text-[10px] ml-2 font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">⏱ {formatTime(elapsedTime)}</span>
-              </div>
-             </div>
-             <div className="flex gap-2 shrink-0">
-              <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="border border-blue-600 text-blue-600 font-bold px-3 py-1.5 rounded transition text-xs bg-white">列表</button>
+          {/* 修正：手機橫式結果頁標頭，壓縮為單一列顯示 */}
+          <div className="px-2 py-2 flex items-center justify-between shrink-0 border-b border-gray-200 bg-white w-full overflow-hidden gap-1">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <span className="text-[11px] font-bold text-gray-800 truncate max-w-[80px] shrink-0">{recordName}</span>
+              <span className="text-sm font-bold text-blue-600 shrink-0">{score}/{totalScore}</span>
+              <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1 rounded whitespace-nowrap shrink-0">⏱ {formatTime(elapsedTime)}</span>
+            </div>
+            <div className="flex gap-1.5 shrink-0">
+              <button onClick={() => { setCurrentPage('setup'); setSetupTab('history'); }} className="border border-blue-600 text-blue-600 font-bold px-2 py-1 rounded transition text-[10px] bg-white whitespace-nowrap">列表</button>
               <button onClick={() => {
                 setCurrentPage('setup');
                 setSetupTab('new');
@@ -1117,8 +1030,8 @@ export default function App() {
                 setRecordName('');
                 setPdfUrl(null);
                 setCurrentRecordId(null);
-              }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded shadow transition text-xs">新測驗</button>
-             </div>
+              }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2 py-1 rounded shadow transition text-[10px] whitespace-nowrap">新測驗</button>
+            </div>
           </div>
 
           <div className="w-full h-full flex flex-row items-center px-4 py-2 gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden bg-gray-50">
@@ -1131,14 +1044,14 @@ export default function App() {
                 
                 <div className="flex items-center justify-center gap-2 mt-1 z-10">
                   <div className="flex flex-col items-center">
-                    <span className="text-[10px] text-gray-400">你答</span>
+                    <span className="text-[10px] text-gray-400 whitespace-nowrap">你答</span>
                     <span className={`text-xl font-bold ${item.isCorrect ? 'text-green-700' : 'text-red-600'}`}>{item.userAns}</span>
                   </div>
                   {!item.isCorrect && (
                     <>
                       <span className="text-gray-300 text-xs">|</span>
                       <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-gray-400">正確</span>
+                        <span className="text-[10px] text-gray-400 whitespace-nowrap">正確</span>
                         <span className={`${item.correctAns.length > 2 ? 'text-xs' : 'text-xl'} font-bold text-green-600 whitespace-nowrap`}>{item.correctAns}</span>
                       </div>
                     </>
