@@ -1100,7 +1100,27 @@ export default function App() {
           {/* 左側 / 上方：PDF 題目瀏覽區 */}
           <div className="flex-1 w-full md:h-full bg-gray-800 flex flex-col items-center justify-center relative z-0 overflow-hidden">
             {pdfUrl ? (
-              <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
+              <>
+                {/* 加上 overflow-auto 與 WebkitOverflowScrolling 嘗試拯救部分 Android 的滑動 */}
+                <div className="w-full h-full overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                  <iframe src={`${pdfUrl}#toolbar=0&view=FitH`} className="w-full h-full border-none" title="PDF Viewer" />
+                </div>
+                
+                {/* 手機版專用浮動按鈕：解決行動版瀏覽器 iframe 無法滾動 PDF 的限制 */}
+                <button
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = pdfUrl;
+                    link.download = '題目卷.pdf';
+                    link.target = '_blank';
+                    link.click();
+                  }}
+                  className="md:hidden absolute top-4 right-4 bg-blue-600/90 hover:bg-blue-700 text-white px-3 py-2 rounded-lg shadow-xl text-xs font-bold border border-blue-500 backdrop-blur-md flex items-center gap-1 z-50"
+                >
+                  <span className="text-base">📥</span>
+                  <span>完整開啟 / 放大題目</span>
+                </button>
+              </>
             ) : (
               <div className="text-gray-300 flex flex-col items-center justify-center p-6 text-center w-full h-full border-4 border-dashed border-gray-600 m-4 rounded-xl max-w-md max-h-[80%]">
                 <span className="text-4xl mb-4">📄</span>
